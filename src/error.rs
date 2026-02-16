@@ -22,6 +22,10 @@ pub enum Error {
     /// JSON parsing error.
     #[error("JSON parse error: {0}")]
     ParseError(#[from] serde_json::Error),
+
+    /// Operation was cancelled.
+    #[error("Operation was cancelled")]
+    Cancelled,
 }
 
 impl Error {
@@ -35,4 +39,3 @@ impl Error {
         Self::TransportError(error.into())
     }
 }
-

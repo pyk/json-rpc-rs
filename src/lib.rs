@@ -1,8 +1,8 @@
-//! JSON-RPC 2.0 implementation for building protocol handlers.
+//! JSON-RPC 2.0 implementation with a builder pattern API.
 //!
-//! This module provides a generic, protocol-agnostic JSON-RPC 2.0 implementation
-//! that can be used to build any JSON-RPC-based protocol. It handles the
-//! wire format (transport), message parsing, and method routing.
+//! This module provides a simple, flexible JSON-RPC 2.0 implementation
+//! that uses a builder pattern for server configuration and method registration.
+//! It handles the wire format (transport), message parsing, and method routing.
 //!
 //! # Architecture
 //!
@@ -10,113 +10,129 @@
 //!
 //! - [`types`] - JSON-RPC 2.0 message types (Request, Response, Notification, Error)
 //! - [`transports`] - I/O handling with multiple transport implementations (Stdio, InMemory)
-//! - [`handler`] - Message handling and the main I/O loop
-//! - [`router`] - Protocol-agnostic method routing
+//! - [`server`] - Server with builder pattern and thread pool for concurrent request handling
+//! - [`shutdown`] - Shutdown signal for graceful server shutdown
+//! - [`cancellation`] - Cancellation token for request cancellation
 //! - [`error`] - Internal error types for the implementation
 //!
 //! # Quick Start
 //!
-//! To implement a protocol using this module:
+//! To implement a JSON-RPC server using this module:
 //!
-//! ## 1. Define Your Protocol Methods
-//!
-//! Create an enum representing all methods in your protocol:
+//! ## 1. Create a Server and Register Methods
 //!
 //! ```no_run
-//! use json_rpc::RequestId;
+//! use json_rpc::{Server, Error};
 //!
-//! enum MyProtocolMethod {
-//!     Initialize(RequestId),
-//!     DoSomething(RequestId),
-//!     Unknown(RequestId, String),
-//! }
+//! // Create a new server
+//! let mut server = Server::new();
+//!
+//! // Register methods with type-safe parameters
+//! server.register("add", |params: (i32, i32)| {
+//!     Ok(params.0 + params.1)
+//! })?;
+//!
+//! server.register("echo", |params: String| {
+//!     Ok(params)
+//! })?;
+//! # Ok::<(), Error>(())
 //! ```
 //!
-//! ## 2. Implement the Router Trait
-//!
-//! Implement the [`Router`] trait to map JSON-RPC method names to your protocol methods:
+//! ## 2. Configure the Server (Optional)
 //!
 //! ```no_run
-//! use json_rpc::{Router, Request, RequestId};
-//! use json_rpc::types::Response;
-//! use json_rpc::Error;
+//! use json_rpc::{Server, ShutdownSignal, Error};
 //!
-//! enum MyProtocolMethod {
-//!     Initialize(RequestId),
-//!     DoSomething(RequestId),
-//!     Unknown(RequestId, String),
-//! }
+//! let shutdown = ShutdownSignal::new();
 //!
-//! struct MyRouter;
+//! let mut server = Server::new()
+//!     .with_thread_pool_size(4)
+//!     .with_shutdown_signal(shutdown);
 //!
-//! impl Router for MyRouter {
-//!     type Method = MyProtocolMethod;
-//!
-//!     fn route(&self, request: Request) -> Self::Method {
-//!         match request.method.as_str() {
-//!             "initialize" => MyProtocolMethod::Initialize(request.id),
-//!             "doSomething" => MyProtocolMethod::DoSomething(request.id),
-//!             _ => MyProtocolMethod::Unknown(request.id, request.method),
-//!         }
-//!     }
-//!
-//!     fn handle<F>(&self, method: Self::Method, handler: F) -> Result<Option<serde_json::Value>, Error>
-//!     where
-//!         F: FnOnce() -> Result<serde_json::Value, Error>,
-//!     {
-//!         match method {
-//!             MyProtocolMethod::Initialize(id) => {
-//!                 // Your business logic here
-//!                 let result = handler()?;
-//!                 Ok(Some(result))
-//!             }
-//!             MyProtocolMethod::DoSomething(id) => {
-//!                 // Your business logic here
-//!                 let result = handler()?;
-//!                 Ok(Some(result))
-//!             }
-//!             MyProtocolMethod::Unknown(_, _) => {
-//!                 Err(Error::protocol("Unknown method"))
-//!             }
-//!         }
-//!     }
-//!
-//!     fn unknown_method_response(&self, id: RequestId, method: &str) -> Response {
-//!         Response::error(
-//!             id,
-//!             json_rpc::types::Error::method_not_found(
-//!                 format!("Unknown method: {}", method)
-//!             ),
-//!         )
-//!     }
-//! }
+//! server.register("add", |params: (i32, i32)| {
+//!     Ok(params.0 + params.1)
+//! })?;
+//! # Ok::<(), Error>(())
 //! ```
 //!
-//! ## 3. Create and Run the Handler
+//! ## 3. Run the Server
 //!
 //! ```no_run
-//! use json_rpc::{Handler, Router, Stdio};
+//! use json_rpc::{Server, Error};
 //!
-//! // Assuming MyRouter is defined as in step 2 above
-//! # struct MyRouter;
-//! # impl Router for MyRouter {
-//! #     type Method = ();
-//! #     fn route(&self, _: json_rpc::Request) -> Self::Method { () }
-//! #     fn handle<F>(&self, _: Self::Method, handler: F) -> Result<Option<serde_json::Value>, json_rpc::Error>
-//! #     where
-//! #         F: FnOnce() -> Result<serde_json::Value, json_rpc::Error>
-//! #     {
-//! #         handler().map(Some)
-//! #     }
-//! #     fn unknown_method_response(&self, id: json_rpc::RequestId, method: &str) -> json_rpc::Response {
-//! #         json_rpc::Response::error(id, json_rpc::types::Error::method_not_found(method))
-//! #     }
-//! # }
+//! let mut server = Server::new();
+//! server.register("echo", |params: String| Ok(params))?;
 //!
-//! let router = MyRouter;
-//! let mut handler: Handler<MyRouter, Stdio> = Handler::new(router);
-//! handler.run()?;  // Blocks and processes messages
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! // Run with default Stdio transport
+//! server.run()?;
+//! # Ok::<(), Error>(())
+//! ```
+//!
+//! # Using Custom Transports
+//!
+//! You can run the server with any transport that implements the [`Transport`] trait:
+//!
+//! ```no_run
+//! use json_rpc::{Server, InMemory, Error};
+//!
+//! let mut server = Server::new();
+//! server.register("echo", |params: String| Ok(params))?;
+//!
+//! // Run with InMemory transport
+//! let (transport, _sender) = InMemory::unconnected();
+//! server.run_with_transport(transport)?;
+//! # Ok::<(), Error>(())
+//! ```
+//!
+//! # Struct Parameters
+//!
+//! Methods can use struct parameters for more complex APIs:
+//!
+//! ```no_run
+//! use json_rpc::{Server, Error};
+//! use serde::Deserialize;
+//!
+//! #[derive(Deserialize)]
+//! struct InitializeParams {
+//!     name: String,
+//!     version: String,
+//! }
+//!
+//! let mut server = Server::new();
+//!
+//! server.register("initialize", |params: InitializeParams| {
+//!     Ok(format!("Server {} v{} initialized", params.name, params.version))
+//! })?;
+//! # Ok::<(), Error>(())
+//! ```
+//!
+//! # Graceful Shutdown
+//!
+//! Use a shutdown signal to gracefully stop the server:
+//!
+//! ```no_run
+//! use json_rpc::{Server, ShutdownSignal, Error};
+//! use std::thread;
+//! use std::time::Duration;
+//!
+//! let shutdown = ShutdownSignal::new();
+//!
+//! let mut server = Server::new()
+//!     .with_shutdown_signal(shutdown.clone());
+//!
+//! server.register("shutdown", |_params: ()| {
+//!     // Signal shutdown from within a handler
+//!     // shutdown.signal(); // This would need access to shutdown
+//!     Ok("Shutting down".to_string())
+//! })?;
+//!
+//! // In a real application, you'd spawn the server in a thread
+//! // and signal shutdown from another thread or signal handler
+//! thread::spawn(move || {
+//!     thread::sleep(Duration::from_secs(5));
+//!     shutdown.signal();
+//! });
+//! # Ok::<(), Error>(())
 //! ```
 //!
 //! # Layer Responsibilities
@@ -125,8 +141,10 @@
 //! |-----------|----------------|
 //! | `types` | JSON-RPC message structures and serialization |
 //! | `transport` | Reading/writing bytes to the wire |
-//! | `handler` | Main I/O loop, message dispatch |
-//! | `router` | Maps method names to protocol-specific handlers |
+//! | `server` | Method registration, request handling, thread pool |
+//! | `shutdown` | Graceful shutdown signaling |
+//! | `cancellation` | Request cancellation |
+//! | `error` | Error types and handling |
 //!
 //! # Protocol vs Transport
 //!
@@ -140,24 +158,34 @@
 //! You can implement custom transports (TCP, WebSocket, etc.) by implementing
 //! the [`Transport`] trait.
 //!
-//! # Example: ACP Protocol
+//! # Thread Pool
 //!
-//! The Agent Client Protocol (ACP) uses this module by:
+//! The server uses a fixed-size thread pool for concurrent request handling:
 //!
-//! 1. Defining ACP methods in an enum (`Initialize`, `SessionNew`, etc.)
-//! 2. Implementing `Router` to map `"initialize"` -> `ACPMethod::Initialize`
-//! 3. Using `Handler` to run the main I/O loop
+//! - Default size: Number of CPU cores
+//! - Configurable via `.with_thread_pool_size()`
+//! - Each request is processed in a worker thread
+//! - Responses are sent back to the main thread for transmission
 //!
-//! See [`crate::agent`] for the ACP implementation.
+//! # Error Handling
+//!
+//! Methods return `Result<T, Error>`, where `Error` is an enum with these variants:
+//!
+//! - `ProtocolError` - Protocol-level errors (invalid method, etc.)
+//! - `TransportError` - I/O errors from the transport layer
+//! - `ParseError` - JSON parsing errors
+//! - `Cancelled` - Operation was cancelled via CancellationToken
 
+pub use cancellation::CancellationToken;
 pub use error::Error;
-pub use handler::Handler;
-pub use router::{ErrorExt as _, JsonRpcErrorExt as _, Router};
+pub use server::Server;
+pub use shutdown::ShutdownSignal;
 pub use transports::{InMemory, Stdio, Transport};
 pub use types::{Message, Notification, Request, RequestId, Response};
 
+pub mod cancellation;
 pub mod error;
-pub mod handler;
-pub mod router;
+pub mod server;
+pub mod shutdown;
 pub mod transports;
 pub mod types;
