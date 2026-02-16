@@ -59,7 +59,7 @@ specification does not address that layer of complexity.
 ## 3 Compatibility
 
 JSON-RPC 2.0 Request objects and Response objects may not work with existing
-JSON-RPC 1.0 clients or servers. However, it is easy to distinguish between the
+JSON-RPC 1.0 clients or servers. However, it is easy to distinguish between the
 two versions as 2.0 always has a member named "jsonrpc" with a String value of
 "2.0" whereas 1.0 does not. Most 2.0 implementations should consider trying to
 handle 1.0 objects, even if not the peer-to-peer and class hinting aspects of
