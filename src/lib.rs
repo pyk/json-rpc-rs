@@ -70,17 +70,20 @@
 //!
 //! # Using Custom Transports
 //!
-//! You can run the server with any transport that implements the [`Transport`] trait:
+//! You can configure the server to use any transport that implements the [`Transport`] trait:
 //!
 //! ```no_run
 //! use json_rpc::{Server, InMemory, Error};
 //!
-//! let mut server = Server::new();
+//! let (transport, _sender) = InMemory::unconnected();
+//!
+//! let mut server = Server::new()
+//!     .with_transport(transport);
+//!
 //! server.register("echo", |params: String| Ok(params))?;
 //!
-//! // Run with InMemory transport
-//! let (transport, _sender) = InMemory::unconnected();
-//! server.run_with_transport(transport)?;
+//! // Run with the configured transport
+//! server.run()?;
 //! # Ok::<(), Error>(())
 //! ```
 //!

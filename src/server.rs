@@ -172,17 +172,20 @@ pub struct Server {
     handlers: HashMap<String, Box<dyn HandlerFn>>,
     thread_pool_size: usize,
     shutdown_signal: Option<ShutdownSignal>,
+    transport: Option<Box<dyn Transport>>,
 }
 
 impl Server {
     /// Create a new server with default configuration.
     ///
     /// Default thread pool size is the number of CPU cores.
+    /// Default transport is Stdio.
     pub fn new() -> Self {
         Self {
             handlers: HashMap::new(),
             thread_pool_size: num_cpus::get(),
             shutdown_signal: None,
+            transport: None,
         }
     }
 
@@ -202,6 +205,32 @@ impl Server {
     /// and shut down gracefully when signaled.
     pub fn with_shutdown_signal(mut self, signal: ShutdownSignal) -> Self {
         self.shutdown_signal = Some(signal);
+        self
+    }
+
+    /// Set a custom transport for the server.
+    ///
+    /// If not set, the server will use the default Stdio transport.
+    /// This allows using any transport that implements the `Transport` trait.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use json_rpc::{Server, InMemory, Error};
+    ///
+    /// let (transport, _sender) = InMemory::unconnected();
+    ///
+    /// let mut server = Server::new()
+    ///     .with_transport(transport);
+    ///
+    /// server.register("echo", |params: String| Ok(params))?;
+    /// # Ok::<(), Error>(())
+    /// ```
+    pub fn with_transport<T>(mut self, transport: T) -> Self
+    where
+        T: Transport + 'static,
+    {
+        self.transport = Some(Box::new(transport));
         self
     }
 
@@ -250,11 +279,14 @@ impl Server {
         Ok(())
     }
 
-    /// Run the server with the default Stdio transport.
+    /// Run the server.
     ///
     /// This method blocks until shutdown is requested or EOF is received.
     /// If a shutdown signal was configured, it waits for the signal.
-    /// Otherwise, it waits for EOF on stdin.
+    /// Otherwise, it waits for EOF on the transport.
+    ///
+    /// Uses the transport configured via `with_transport()`, or the default
+    /// Stdio transport if none was configured.
     ///
     /// # Example
     ///
@@ -267,31 +299,10 @@ impl Server {
     /// # Ok::<(), json_rpc::Error>(())
     /// ```
     pub fn run(&mut self) -> Result<(), Error> {
-        let transport = Stdio::default();
-        self.run_with_transport(transport)
-    }
-
-    /// Run the server with a custom transport.
-    ///
-    /// This method allows using any transport that implements the `Transport` trait.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use json_rpc::{Server, InMemory, Error};
-    ///
-    /// let mut server = Server::new();
-    /// server.register("echo", |params: String| Ok(params))?;
-    ///
-    /// // Run with InMemory transport
-    /// let (transport, _sender) = InMemory::unconnected();
-    /// server.run_with_transport(transport)?;
-    /// # Ok::<(), Error>(())
-    /// ```
-    pub fn run_with_transport<T>(&mut self, mut transport: T) -> Result<(), Error>
-    where
-        T: Transport + 'static,
-    {
+        let mut transport = self
+            .transport
+            .take()
+            .unwrap_or_else(|| Box::new(Stdio::default()) as Box<dyn Transport>);
         let thread_pool = ThreadPool::new(self.thread_pool_size);
         let handlers = Arc::new(std::sync::Mutex::new(std::mem::take(&mut self.handlers)));
         let shutdown_signal = self.shutdown_signal.clone();
