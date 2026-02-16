@@ -17,6 +17,15 @@ serde_json = "1.0"
 # Thread pool
 num_cpus = "1"
 
+# Tracing
+tracing = "0.1"
+
 [dev-dependencies]
 # Error handling for examples
 anyhow = "1.0"
+
+# Integration tests
+assert_cmd = "2.1.2"
+
+# Enable trace in integration tests
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }

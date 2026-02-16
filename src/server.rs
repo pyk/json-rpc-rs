@@ -131,11 +131,7 @@ impl ThreadPool {
 impl Drop for ThreadPool {
     fn drop(&mut self) {
         drop(self.sender.take());
-        // Note: We don't join the threads here to avoid blocking the drop
-        // The threads will exit naturally when the sender is dropped
-        for _worker in &mut self.workers {
-            // Threads will exit when the channel is closed
-        }
+        for _worker in &mut self.workers {}
     }
 }
 
@@ -309,14 +305,12 @@ impl Server {
         let (response_sender, response_receiver) = std::sync::mpsc::channel::<ResponseData>();
 
         loop {
-            // Check for shutdown signal
             if let Some(ref signal) = shutdown_signal
                 && signal.is_shutdown_requested()
             {
                 break;
             }
 
-            // Receive message from transport
             let message = match transport.receive_message() {
                 Ok(msg) => msg,
                 Err(Error::TransportError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
@@ -328,13 +322,11 @@ impl Server {
                 }
             };
 
-            // Clone necessary data for the handler closure
             let handlers_clone = Arc::clone(&handlers);
-            let sender_clone = response_sender.clone();
 
-            // Process the message
             match message {
                 Message::Request(request) => {
+                    let sender_clone = response_sender.clone();
                     thread_pool.execute(move || {
                         if let Err(e) = Self::process_request(handlers_clone, sender_clone, request)
                         {
@@ -343,7 +335,6 @@ impl Server {
                     })?;
                 }
                 Message::Notification(notification) => {
-                    // Notifications are handled directly in this thread (no response needed)
                     if let Err(e) = Self::process_notification(handlers_clone, notification) {
                         eprintln!("Error processing notification: {}", e);
                     }
@@ -351,14 +342,16 @@ impl Server {
                 Message::Response(_response) => {}
             }
 
-            // Process any pending responses
-            while let Ok(response_data) = response_receiver.try_recv() {
+            while let Ok(response_data) =
+                response_receiver.recv_timeout(std::time::Duration::from_millis(100))
+            {
                 transport.send_response(&response_data.response)?;
             }
         }
 
-        // Process any remaining responses before shutdown
-        while let Ok(response_data) = response_receiver.try_recv() {
+        while let Ok(response_data) =
+            response_receiver.recv_timeout(std::time::Duration::from_millis(100))
+        {
             transport.send_response(&response_data.response)?;
         }
 
@@ -393,7 +386,6 @@ impl Server {
                 }
             },
             Err(_) => {
-                // Mutex is poisoned, return internal error
                 let error = crate::types::Error::internal_error("Internal server error");
                 Response::error(id, error)
             }
@@ -411,9 +403,6 @@ impl Server {
         _handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
         notification: Notification,
     ) -> Result<(), Error> {
-        // Notifications don't require responses
-        // For now, just log that we received it
-        // In the future, this could be extended to handle notifications differently
         eprintln!("Received notification: {}", notification.method);
         Ok(())
     }
