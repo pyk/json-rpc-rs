@@ -6,8 +6,8 @@
 use std::io::{BufRead, BufReader, BufWriter, Write};
 
 use crate::error::Error;
-use crate::jsonrpc::transports::Transport;
-use crate::jsonrpc::types::{Message, Notification, Request, Response};
+use crate::transports::Transport;
+use crate::types::{Message, Notification, Request, Response};
 
 /// Stdio-based transport for JSON-RPC messages.
 ///

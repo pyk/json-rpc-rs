@@ -5,7 +5,7 @@
 //!
 
 use crate::error::Error;
-use crate::jsonrpc::types::{Request, RequestId, Response};
+use crate::types::{Request, RequestId, Response};
 
 /// Router trait for handling method routing.
 ///
@@ -47,7 +47,7 @@ pub trait JsonRpcErrorExt {
     fn into_response(self, id: RequestId) -> Response;
 }
 
-impl JsonRpcErrorExt for crate::jsonrpc::types::Error {
+impl JsonRpcErrorExt for crate::types::Error {
     fn method_not_found(message: impl Into<String>) -> Self {
         Self::new(-32601, message, None)
     }

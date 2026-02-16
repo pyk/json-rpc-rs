@@ -7,8 +7,8 @@
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::error::Error;
-use crate::jsonrpc::transports::Transport;
-use crate::jsonrpc::types::{Message, Notification, Request, Response};
+use crate::transports::Transport;
+use crate::types::{Message, Notification, Request, Response};
 
 /// In-memory transport for JSON-RPC messages.
 ///
@@ -22,7 +22,7 @@ use crate::jsonrpc::types::{Message, Notification, Request, Response};
 /// # Example
 ///
 /// ```no_run
-/// use acp::jsonrpc::transports::in_memory::InMemory;
+/// use json_rpc::transports::in_memory::InMemory;
 ///
 /// // Create a pair of connected transports
 /// let (transport_a, transport_b) = InMemory::pair();
@@ -39,11 +39,6 @@ impl InMemory {
     ///
     /// This is typically used by the `pair()` method, but can be used directly
     /// if you need to connect to existing channels.
-    ///
-    /// # Arguments
-    ///
-    /// * `receiver` - Channel receiver for incoming messages
-    /// * `sender` - Channel sender for outgoing messages
     pub fn new(receiver: Receiver<String>, sender: Sender<String>) -> Self {
         Self { receiver, sender }
     }
@@ -56,7 +51,7 @@ impl InMemory {
     /// # Example
     ///
     /// ```no_run
-    /// use acp::jsonrpc::transports::in_memory::InMemory;
+    /// use json_rpc::transports::in_memory::InMemory;
     ///
     /// let (transport_a, transport_b) = InMemory::pair();
     ///
@@ -78,12 +73,6 @@ impl InMemory {
     /// This creates a transport with its own channel. Returns the transport and a
     /// sender that can be used to send messages to it. This is primarily useful
     /// for scenarios where you want to manually control message sending to the transport.
-    ///
-    /// # Arguments
-    ///
-    /// * Returns a tuple of (transport, sender) where:
-    ///   - transport: The in-memory transport that will receive messages
-    ///   - sender: A cloned sender that can be used to send messages to the transport
     ///
     /// Note that if you try to receive from this transport, it will block indefinitely
     /// until a message is sent via the returned sender.
@@ -114,12 +103,6 @@ impl Transport for InMemory {
     /// Receive a JSON-RPC message from the in-memory channel.
     ///
     /// This method blocks until a message is available on the receiver channel.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The sender has been disconnected and no messages remain
-    /// - The message is malformed JSON
     fn receive_message(&mut self) -> Result<Message, Error> {
         let json_str = self.receiver.recv().map_err(|_| {
             Error::TransportError(std::io::Error::new(
@@ -138,12 +121,6 @@ impl Transport for InMemory {
     /// Send a JSON-RPC request through the in-memory channel.
     ///
     /// Serializes the request and sends it through the sender channel.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Serialization fails
-    /// - The receiver has been disconnected
     fn send_request(&mut self, request: &Request) -> Result<(), Error> {
         let json = serde_json::to_string(request).map_err(|e| {
             Error::TransportError(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
@@ -160,12 +137,6 @@ impl Transport for InMemory {
     /// Send a JSON-RPC response through the in-memory channel.
     ///
     /// Serializes the response and sends it through the sender channel.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Serialization fails
-    /// - The receiver has been disconnected
     fn send_response(&mut self, response: &Response) -> Result<(), Error> {
         let json = serde_json::to_string(response).map_err(|e| {
             Error::TransportError(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
@@ -182,12 +153,6 @@ impl Transport for InMemory {
     /// Send a JSON-RPC notification through the in-memory channel.
     ///
     /// Serializes the notification and sends it through the sender channel.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Serialization fails
-    /// - The receiver has been disconnected
     fn send_notification(&mut self, notification: &Notification) -> Result<(), Error> {
         let json = serde_json::to_string(notification).map_err(|e| {
             Error::TransportError(std::io::Error::new(std::io::ErrorKind::InvalidData, e))

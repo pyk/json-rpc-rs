@@ -5,9 +5,9 @@
 //! a router to handle method dispatch.
 
 use crate::error::Error;
-use crate::jsonrpc::router::Router;
-use crate::jsonrpc::transports::{Stdio, Transport};
-use crate::jsonrpc::types::{Message, Request, Response};
+use crate::router::Router;
+use crate::transports::{Stdio, Transport};
+use crate::types::{Message, Request, Response};
 
 /// JSON-RPC handler for processing messages.
 ///
@@ -33,11 +33,6 @@ where
     T: Transport,
 {
     /// Create a new handler with the given router and transport.
-    ///
-    /// # Arguments
-    ///
-    /// * `router` - The router to use for method dispatch
-    /// * `transport` - The transport to use for communication
     pub fn new_with_transport(router: R, transport: T) -> Self {
         Self { transport, router }
     }
@@ -45,10 +40,6 @@ where
     /// Create a new handler with the given router and default transport.
     ///
     /// Uses `Stdio` as the default transport.
-    ///
-    /// # Arguments
-    ///
-    /// * `router` - The router to use for method dispatch
     pub fn new(router: R) -> Self
     where
         T: Default,
@@ -110,7 +101,7 @@ where
             Ok(Some(value)) => Response::success(id.clone(), value),
             Ok(None) => Response::success(id.clone(), serde_json::Value::Null),
             Err(e) => {
-                let error = crate::jsonrpc::types::Error::new(-32000, e.to_string(), None);
+                let error = crate::types::Error::new(-32000, e.to_string(), None);
                 Response::error(id, error)
             }
         };
@@ -121,7 +112,7 @@ where
     /// Handle a JSON-RPC notification.
     fn handle_notification(
         &mut self,
-        _notification: crate::jsonrpc::types::Notification,
+        _notification: crate::types::Notification,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -134,7 +125,7 @@ where
     /// Send a JSON-RPC notification.
     pub fn send_notification(
         &mut self,
-        notification: crate::jsonrpc::types::Notification,
+        notification: crate::types::Notification,
     ) -> Result<(), Error> {
         self.transport.send_notification(&notification)
     }

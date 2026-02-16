@@ -6,12 +6,13 @@
 //!
 //! # Architecture
 //!
-//! The jsonrpc module is organized into four main components:
+//! The json-rpc crate is organized into five main components:
 //!
 //! - [`types`] - JSON-RPC 2.0 message types (Request, Response, Notification, Error)
 //! - [`transports`] - I/O handling with multiple transport implementations (Stdio, InMemory)
 //! - [`handler`] - Message handling and the main I/O loop
 //! - [`router`] - Protocol-agnostic method routing
+//! - [`error`] - Internal error types for the implementation
 //!
 //! # Quick Start
 //!
@@ -22,7 +23,7 @@
 //! Create an enum representing all methods in your protocol:
 //!
 //! ```no_run
-//! use acp::jsonrpc::RequestId;
+//! use json_rpc::RequestId;
 //!
 //! enum MyProtocolMethod {
 //!     Initialize(RequestId),
@@ -36,9 +37,9 @@
 //! Implement the [`Router`] trait to map JSON-RPC method names to your protocol methods:
 //!
 //! ```no_run
-//! use acp::jsonrpc::{Router, Request, RequestId};
-//! use acp::jsonrpc::types::Response;
-//! use acp::Error;
+//! use json_rpc::{Router, Request, RequestId};
+//! use json_rpc::types::Response;
+//! use json_rpc::Error;
 //!
 //! enum MyProtocolMethod {
 //!     Initialize(RequestId),
@@ -83,7 +84,7 @@
 //!     fn unknown_method_response(&self, id: RequestId, method: &str) -> Response {
 //!         Response::error(
 //!             id,
-//!             acp::jsonrpc::types::Error::method_not_found(
+//!             json_rpc::types::Error::method_not_found(
 //!                 format!("Unknown method: {}", method)
 //!             ),
 //!         )
@@ -94,14 +95,26 @@
 //! ## 3. Create and Run the Handler
 //!
 //! ```no_run
-//! use acp::jsonrpc::{Handler, Router};
+//! use json_rpc::{Handler, Router, Stdio};
 //!
 //! // Assuming MyRouter is defined as in step 2 above
 //! # struct MyRouter;
-//! # impl Router for MyRouter { type Method = (); fn route(&self, _: acp::jsonrpc::Request) -> Self::Method { () } fn handle<F>(&self, _: Self::Method, _: F) -> Result<Option<serde_json::Value>, acp::Error> where F: FnOnce() -> Result<serde_json::Value>, acp::Error> { Ok(None) } fn unknown_method_response(&self, _: acp::jsonrpc::RequestId, _: &str) -> acp::jsonrpc::Response { todo!() } }
+//! # impl Router for MyRouter {
+//! #     type Method = ();
+//! #     fn route(&self, _: json_rpc::Request) -> Self::Method { () }
+//! #     fn handle<F>(&self, _: Self::Method, handler: F) -> Result<Option<serde_json::Value>, json_rpc::Error>
+//! #     where
+//! #         F: FnOnce() -> Result<serde_json::Value, json_rpc::Error>
+//! #     {
+//! #         handler().map(Some)
+//! #     }
+//! #     fn unknown_method_response(&self, id: json_rpc::RequestId, method: &str) -> json_rpc::Response {
+//! #         json_rpc::Response::error(id, json_rpc::types::Error::method_not_found(method))
+//! #     }
+//! # }
 //!
 //! let router = MyRouter;
-//! let mut handler = Handler::new(router);
+//! let mut handler: Handler<MyRouter, Stdio> = Handler::new(router);
 //! handler.run()?;  // Blocks and processes messages
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -137,11 +150,13 @@
 //!
 //! See [`crate::agent`] for the ACP implementation.
 
+pub use error::Error;
 pub use handler::Handler;
 pub use router::{ErrorExt as _, JsonRpcErrorExt as _, Router};
 pub use transports::{InMemory, Stdio, Transport};
-pub use types::{Error, Message, Notification, Request, RequestId, Response};
+pub use types::{Message, Notification, Request, RequestId, Response};
 
+pub mod error;
 pub mod handler;
 pub mod router;
 pub mod transports;

@@ -8,8 +8,6 @@ pub mod in_memory;
 pub mod stdio;
 pub mod transport;
 
-pub use transport::Transport;
-
-// Re-export transport implementations for convenience
 pub use in_memory::InMemory;
 pub use stdio::Stdio;
+pub use transport::Transport;
