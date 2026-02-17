@@ -51,15 +51,13 @@ fn main() -> Result<()> {
     debug!("Registering 'hello' method");
     server.register("hello", |params: String| {
         debug!("Hello handler called with params: {:?}", params);
-        if params == "world" {
-            let result = Ok(format!("Hello, {}!", params));
-            debug!("Hello handler returning success: {:?}", result);
-            result
-        } else {
-            let error = Err(Error::rpc(-32000, "text must be 'world'"));
-            debug!("Hello handler returning error: {:?}", error);
-            error
+        if params != "world" {
+            debug!("Hello handler returning error: text must be 'world'");
+            return Err(Error::rpc(-32000, "text must be 'world'"));
         }
+        let result = Ok(format!("Hello, {}!", params));
+        debug!("Hello handler returning success: {:?}", result);
+        result
     })?;
 
     debug!("Registering 'internal_error' method");
