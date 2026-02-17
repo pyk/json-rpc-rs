@@ -1,4 +1,4 @@
-//! A thread pool-based JSON-RPC 2.0 implementation using blocking I/O.
+//! A thread pool-based JSON-RPC 2.0 implementation.
 //!
 //! This library provides a simple, user-friendly API for creating local JSON-RPC
 //! servers. It handles the JSON-RPC protocol layer including message parsing,

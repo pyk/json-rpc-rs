@@ -1,9 +1,8 @@
 # json-rpc-rs
 
-A thread pool-based Rust implementation of JSON-RPC 2.0 using blocking I/O. This
-library provides a simple, user-friendly API for creating local JSON-RPC servers
-with concurrent request handling, graceful shutdown, and support for multiple
-transports.
+A thread pool-based Rust implementation of JSON-RPC 2.0. This library provides a
+simple, user-friendly API for creating local JSON-RPC servers with concurrent
+request handling, graceful shutdown, and support for multiple transports.
 
 ## Features
 
