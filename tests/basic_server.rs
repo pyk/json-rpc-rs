@@ -4,15 +4,15 @@
 //! validates JSON-RPC 2.0 error handling. It tests all error codes defined
 //! in the JSON-RPC 2.0 specification.
 
+pub mod common;
+
 mod tests {
+    use super::common;
     use assert_cmd::Command;
     use serde_json::json;
 
     fn send_request(request: &str) -> String {
-        let manifest_dir =
-            std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set by cargo");
-        let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-        let binary_path = format!("{}/target/{}/examples/basic_server", manifest_dir, profile);
+        let binary_path = common::get_example_path("basic_server").unwrap();
 
         let output = Command::new(&binary_path)
             .write_stdin(request)
@@ -45,7 +45,6 @@ mod tests {
         assert_eq!(response, expected_response);
     }
 
-
     #[test]
     fn parse_error_invalid_json() {
         let request = r#"{"jsonrpc":"2.0","method":"hello","params":"world""#;
@@ -67,7 +66,6 @@ mod tests {
 
         assert_eq!(response, expected_response);
     }
-
 
     #[test]
     fn invalid_request_missing_jsonrpc() {
@@ -151,7 +149,6 @@ mod tests {
         assert_eq!(response, expected_response);
     }
 
-
     #[test]
     fn method_not_found_nonexistent_method() {
         let request = json!({
@@ -168,7 +165,6 @@ mod tests {
 
         assert_eq!(response, expected_response);
     }
-
 
     #[test]
     fn invalid_params_missing_for_hello() {
@@ -237,7 +233,6 @@ mod tests {
         assert_eq!(response, expected_response);
     }
 
-
     #[test]
     fn internal_error() {
         let request = json!({
@@ -253,7 +248,6 @@ mod tests {
 
         assert_eq!(response, expected_response);
     }
-
 
     #[test]
     fn server_error_custom() {
@@ -272,8 +266,6 @@ mod tests {
 
         assert_eq!(response, expected_response);
     }
-
-
 
     #[test]
     fn batch_invalid_request_empty_array() {
@@ -314,7 +306,6 @@ mod tests {
 
         assert_eq!(response, expected_response);
     }
-
 
     #[test]
     fn notification_valid_no_response() {
@@ -357,7 +348,6 @@ mod tests {
 
         assert_eq!(response, "");
     }
-
 
     #[test]
     fn hello_with_empty_string() {

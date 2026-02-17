@@ -5,17 +5,17 @@
 //! - Sending JSON-RPC requests via stdin
 //! - Capturing and validating stdout responses
 
+pub mod common;
+
 mod tests {
+    use super::common;
     use assert_cmd::Command;
     use serde_json::{Value, json};
 
     /// Helper function to send a JSON-RPC request to the echo server and get the response.
     /// Takes a JSON-RPC request string as input and returns the parsed JSON response.
     fn send_echo_request(request: &str) -> Value {
-        let manifest_dir =
-            std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set by cargo");
-        let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-        let binary_path = format!("{}/target/{}/examples/echo_server", manifest_dir, profile);
+        let binary_path = common::get_example_path("echo_server").unwrap();
 
         let output = Command::new(&binary_path)
             .write_stdin(request)
