@@ -14,6 +14,7 @@ use crate::error::Error;
 use crate::shutdown::ShutdownSignal;
 use crate::transports::{Stdio, Transport};
 use crate::types::{Message, Notification, Request, RequestId, Response};
+use tracing::debug;
 
 /// Internal trait for type erasure of handler functions.
 ///
@@ -138,6 +139,13 @@ impl Drop for ThreadPool {
 /// Response data sent from worker threads to main thread.
 struct ResponseData {
     response: Response,
+    batch_id: Option<usize>,
+    batch_index: Option<usize>,
+}
+
+struct BatchContext {
+    responses: Vec<Option<Response>>,
+    expected_count: usize,
 }
 
 /// JSON-RPC server with builder pattern.
@@ -303,6 +311,8 @@ impl Server {
         let handlers = Arc::new(std::sync::Mutex::new(std::mem::take(&mut self.handlers)));
         let shutdown_signal = self.shutdown_signal.clone();
         let (response_sender, response_receiver) = std::sync::mpsc::channel::<ResponseData>();
+        let mut batches: HashMap<usize, BatchContext> = HashMap::new();
+        let mut next_batch_id: usize = 0;
 
         loop {
             if let Some(ref signal) = shutdown_signal
@@ -311,49 +321,104 @@ impl Server {
                 break;
             }
 
-            let message = match transport.receive_message() {
-                Ok(msg) => msg,
+            let json_str = match transport.receive_message() {
+                Ok(msg) => {
+                    debug!("Received message from transport: {}", msg);
+                    msg
+                }
                 Err(Error::TransportError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    debug!("EOF received, breaking loop");
                     break;
                 }
-                Err(Error::ParseError(_e)) => {
-                    // Send parse error response (-32700) with null id
-                    let error = crate::types::Error::parse_error("Parse error");
-                    let response = Response::error(RequestId::Null, error);
-                    let _ = transport.send_response(&response);
-                    continue;
-                }
-                Err(Error::InvalidRequest(e)) => {
-                    // Send invalid request error response (-32600) with null id
-                    let error = crate::types::Error::invalid_request(e);
-                    let response = Response::error(RequestId::Null, error);
-                    let _ = transport.send_response(&response);
-                    continue;
-                }
-                Err(Error::ProtocolError(_e)) => {
-                    // Send invalid request error response (-32600) with null id
-                    let error = crate::types::Error::invalid_request("Invalid Request");
-                    let response = Response::error(RequestId::Null, error);
-                    let _ = transport.send_response(&response);
-                    continue;
-                }
-                Err(Error::Cancelled) => {
-                    // Cancelled is fatal, break the loop
-                    break;
-                }
-                Err(Error::RpcError { .. }) => {
-                    // Send internal error response (-32603) with null id
+                Err(e) => {
+                    // Transport error - send internal error response
+                    debug!("Transport error: {}", e);
                     let error = crate::types::Error::internal_error("Internal error");
                     let response = Response::error(RequestId::Null, error);
-                    let _ = transport.send_response(&response);
+                    let json = match serde_json::to_string(&response) {
+                        Ok(json) => json,
+                        Err(e) => {
+                            eprintln!("Failed to serialize internal error response: {}", e);
+                            continue;
+                        }
+                    };
+                    debug!("Sending internal error response: {}", json);
+                    let _ = transport.send_message(&json);
+                    continue;
+                }
+            };
+
+            // Parse the JSON string into a Message
+            let value: serde_json::Value = match serde_json::from_str(&json_str) {
+                Ok(v) => {
+                    debug!("JSON parsed successfully");
+                    v
+                }
+                Err(_e) => {
+                    // JSON parse error - send parse error response (-32700) with null id
+                    debug!("Failed to parse JSON string: {}", json_str);
+                    let error = crate::types::Error::parse_error("Parse error");
+                    let response = Response::error(RequestId::Null, error);
+                    let json = match serde_json::to_string(&response) {
+                        Ok(json) => json,
+                        Err(e) => {
+                            eprintln!("Failed to serialize parse error response: {}", e);
+                            continue;
+                        }
+                    };
+                    debug!("Sending parse error response: {}", json);
+                    let _ = transport.send_message(&json);
+                    continue;
+                }
+            };
+
+            // Try to extract id from the JSON value before parsing
+            // This allows us to preserve the id in error responses even if the request is invalid
+            let request_id = value
+                .get("id")
+                .and_then(|id_value| serde_json::from_value::<RequestId>(id_value.clone()).ok());
+            debug!("Extracted request_id: {:?}", request_id);
+
+            // Parse the JSON value into a Message (validates structure)
+            let message = match Message::from_json(value) {
+                Ok(msg) => {
+                    debug!("Message parsed successfully");
+                    msg
+                }
+                Err(Error::InvalidRequest(e)) => {
+                    // Invalid request - send invalid request error response (-32600)
+                    // Use the extracted id if available, otherwise use null
+                    debug!("Invalid Request error caught: {}", e);
+                    let error = crate::types::Error::invalid_request("Invalid Request");
+                    let id_to_use = request_id.unwrap_or(RequestId::Null);
+                    debug!("Using request_id in error response: {:?}", id_to_use);
+                    let response = Response::error(id_to_use, error);
+                    let json = match serde_json::to_string(&response) {
+                        Ok(json) => json,
+                        Err(e) => {
+                            eprintln!("Failed to serialize invalid request error response: {}", e);
+                            continue;
+                        }
+                    };
+                    debug!("Sending Invalid Request error response: {}", json);
+                    let _ = transport.send_message(&json);
                     continue;
                 }
                 Err(e) => {
-                    // Catch-all for any other errors - send internal error response
-                    eprintln!("Unexpected error: {}", e);
-                    let error = crate::types::Error::internal_error(e.to_string());
-                    let response = Response::error(RequestId::Null, error);
-                    let _ = transport.send_response(&response);
+                    // Other errors - send internal error response
+                    debug!("Error parsing message: {}", e);
+                    eprintln!("Error parsing message: {}", e);
+                    let error = crate::types::Error::internal_error("Internal error");
+                    let response = Response::error(request_id.unwrap_or(RequestId::Null), error);
+                    let json = match serde_json::to_string(&response) {
+                        Ok(json) => json,
+                        Err(e) => {
+                            eprintln!("Failed to serialize internal error response: {}", e);
+                            continue;
+                        }
+                    };
+                    debug!("Sending internal error response: {}", json);
+                    let _ = transport.send_message(&json);
                     continue;
                 }
             };
@@ -375,20 +440,81 @@ impl Server {
                         eprintln!("Error processing notification: {}", e);
                     }
                 }
+                Message::Batch(messages) => {
+                    let batch_id = next_batch_id;
+                    next_batch_id = next_batch_id.wrapping_add(1);
+
+                    // Count non-notification messages (requests and error responses)
+                    let request_count = messages
+                        .iter()
+                        .filter(|m| matches!(m, Message::Request(_) | Message::Response(_)))
+                        .count();
+
+                    if request_count > 0 {
+                        batches.insert(
+                            batch_id,
+                            BatchContext {
+                                responses: vec![None; request_count],
+                                expected_count: request_count,
+                            },
+                        );
+
+                        if let Err(e) = Self::process_batch(
+                            &thread_pool,
+                            handlers_clone,
+                            response_sender.clone(),
+                            batch_id,
+                            messages,
+                        ) {
+                            eprintln!("Error processing batch: {}", e);
+                            batches.remove(&batch_id);
+                        }
+                    } else {
+                        // All notifications, no response expected
+                        eprintln!("Batch contains only notifications - no response sent");
+                    }
+                }
                 Message::Response(_response) => {}
             }
 
             while let Ok(response_data) =
                 response_receiver.recv_timeout(std::time::Duration::from_millis(100))
             {
-                transport.send_response(&response_data.response)?;
+                if let Some(batch_id) = response_data.batch_id
+                    && let Some(batch_index) = response_data.batch_index
+                    && let Some(batch) = batches.get_mut(&batch_id)
+                    && batch_index < batch.responses.len()
+                {
+                    batch.responses[batch_index] = Some(response_data.response);
+
+                    // Check if batch is complete
+                    let completed = batch.responses.iter().filter(|r| r.is_some()).count();
+                    if completed == batch.expected_count {
+                        // Send all batch responses as an array
+                        let responses: Vec<Response> =
+                            batch.responses.drain(..).flatten().collect();
+
+                        if !responses.is_empty() {
+                            // Send the batch response as a JSON string
+                            let batch_json = serde_json::to_string(&responses)?;
+                            transport.send_message(&batch_json)?;
+                        }
+
+                        batches.remove(&batch_id);
+                    }
+                } else {
+                    // Single response, serialize and send
+                    let json = serde_json::to_string(&response_data.response)?;
+                    transport.send_message(&json)?;
+                }
             }
         }
 
         while let Ok(response_data) =
             response_receiver.recv_timeout(std::time::Duration::from_millis(100))
         {
-            transport.send_response(&response_data.response)?;
+            let json = serde_json::to_string(&response_data.response)?;
+            transport.send_message(&json)?;
         }
 
         Ok(())
@@ -399,6 +525,16 @@ impl Server {
         handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
         sender: std::sync::mpsc::Sender<ResponseData>,
         request: Request,
+    ) -> Result<(), Error> {
+        Self::process_request_with_batch(handlers, sender, request, None, None)
+    }
+
+    fn process_request_with_batch(
+        handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
+        sender: std::sync::mpsc::Sender<ResponseData>,
+        request: Request,
+        batch_id: Option<usize>,
+        batch_index: Option<usize>,
     ) -> Result<(), Error> {
         let id = request.id.clone();
         let method_name = request.method.clone();
@@ -431,19 +567,114 @@ impl Server {
             }
         };
 
-        sender.send(ResponseData { response }).map_err(|e| {
-            Error::TransportError(std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))
-        })?;
+        sender
+            .send(ResponseData {
+                response,
+                batch_id,
+                batch_index,
+            })
+            .map_err(|e| {
+                Error::TransportError(std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))
+            })?;
 
         Ok(())
     }
 
     /// Process a notification.
+    ///
+    /// Notifications execute the handler but don't return a response.
     fn process_notification(
-        _handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
+        handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
         notification: Notification,
     ) -> Result<(), Error> {
-        eprintln!("Received notification: {}", notification.method);
+        eprintln!("Processing notification: {}", notification.method);
+        let method_name = notification.method.clone();
+        let params = notification.params.unwrap_or(serde_json::Value::Null);
+
+        match handlers.lock() {
+            Ok(handlers_lock) => match handlers_lock.get(&method_name) {
+                Some(handler) => {
+                    // Execute the handler but ignore the result (notifications don't get responses)
+                    let _ = handler.call(params);
+                    Ok(())
+                }
+                None => {
+                    // Method not found for notification - silent error as per spec
+                    Ok(())
+                }
+            },
+            Err(_) => {
+                // Lock failed - silent error for notifications
+                Ok(())
+            }
+        }
+    }
+
+    /// Process a batch of messages.
+    ///
+    /// Each request/notification in the batch is processed individually.
+    /// Responses are collected and sent as a batch response.
+    /// Notifications don't generate responses.
+    fn process_batch(
+        thread_pool: &ThreadPool,
+        handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
+        sender: std::sync::mpsc::Sender<ResponseData>,
+        batch_id: usize,
+        messages: Vec<Message>,
+    ) -> Result<(), Error> {
+        let mut request_index = 0;
+
+        for message in messages {
+            match message {
+                Message::Request(request) => {
+                    let handlers_clone = Arc::clone(&handlers);
+                    let sender_clone = sender.clone();
+                    let index = request_index;
+                    request_index += 1;
+
+                    thread_pool.execute(move || {
+                        if let Err(e) = Self::process_request_with_batch(
+                            handlers_clone,
+                            sender_clone,
+                            request,
+                            Some(batch_id),
+                            Some(index),
+                        ) {
+                            eprintln!("Error processing request in batch: {}", e);
+                        }
+                    })?;
+                }
+                Message::Notification(notification) => {
+                    if let Err(e) = Self::process_notification(handlers.clone(), notification) {
+                        eprintln!("Error processing notification in batch: {}", e);
+                    }
+                }
+                Message::Response(response) => {
+                    let sender_clone = sender.clone();
+                    let index = request_index;
+                    request_index += 1;
+
+                    // Send the error response directly
+                    sender_clone
+                        .send(ResponseData {
+                            response,
+                            batch_id: Some(batch_id),
+                            batch_index: Some(index),
+                        })
+                        .map_err(|e| {
+                            Error::TransportError(std::io::Error::new(
+                                std::io::ErrorKind::BrokenPipe,
+                                e,
+                            ))
+                        })?;
+                }
+                _ => {
+                    // Batch or other message types - should not occur in practice
+                    debug!("Unexpected message type in batch: {:?}", message);
+                }
+            }
+        }
+
         Ok(())
     }
 }

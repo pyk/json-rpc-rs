@@ -55,7 +55,7 @@ impl Error {
         }
     }
 
-    /// Create a new Invalid Request error (-32600).
+    /// Create a new Invalid Request error.
     pub fn invalid_request(message: impl Into<String>) -> Self {
         Self::InvalidRequest(message.into())
     }

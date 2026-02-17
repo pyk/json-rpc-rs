@@ -7,7 +7,6 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 
 use crate::error::Error;
 use crate::transports::Transport;
-use crate::types::{Message, Notification, Request, Response};
 
 /// Stdio-based transport for JSON-RPC messages.
 ///
@@ -66,42 +65,22 @@ impl Stdio {
 }
 
 impl Transport for Stdio {
-    /// Receive a JSON-RPC message from stdin.
+    /// Receive a raw JSON string from stdin.
     ///
-    /// Reads a newline-delimited JSON message and attempts to parse it
-    /// as a JSON-RPC request, response, or notification.
-    ///
-    fn receive_message(&mut self) -> Result<Message, Error> {
-        let json_str = self.read_message()?;
-        let value: serde_json::Value = serde_json::from_str(&json_str)?;
-        Message::from_json(value)
+    /// Reads a newline-delimited JSON message and returns it as a string.
+    /// No parsing or validation is performed - that's the responsibility
+    /// of the caller (typically the server layer).
+    fn receive_message(&mut self) -> Result<String, Error> {
+        self.read_message()
     }
 
-    /// Send a JSON-RPC request.
+    /// Send a raw JSON string to stdout.
     ///
-    /// Serializes the request and writes it to stdout.
-    ///
-    fn send_request(&mut self, request: &Request) -> Result<(), Error> {
-        let json = serde_json::to_string(request)?;
-        self.write_message(&json)
-    }
-
-    /// Send a JSON-RPC response.
-    ///
-    /// Serializes the response and writes it to stdout.
-    ///
-    fn send_response(&mut self, response: &Response) -> Result<(), Error> {
-        let json = serde_json::to_string(response)?;
-        self.write_message(&json)
-    }
-
-    /// Send a JSON-RPC notification.
-    ///
-    /// Serializes the notification and writes it to stdout.
-    ///
-    fn send_notification(&mut self, notification: &Notification) -> Result<(), Error> {
-        let json = serde_json::to_string(notification)?;
-        self.write_message(&json)
+    /// Writes the JSON string as-is to stdout with a newline.
+    /// The caller is responsible for serializing JSON-RPC messages
+    /// to JSON strings before calling this method.
+    fn send_message(&mut self, json: &str) -> Result<(), Error> {
+        self.write_message(json)
     }
 }
 

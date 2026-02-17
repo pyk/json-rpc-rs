@@ -8,7 +8,6 @@ use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::error::Error;
 use crate::transports::Transport;
-use crate::types::{Message, Notification, Request, Response};
 
 /// In-memory transport for JSON-RPC messages.
 ///
@@ -100,65 +99,27 @@ impl InMemory {
 }
 
 impl Transport for InMemory {
-    /// Receive a JSON-RPC message from the in-memory channel.
+    /// Receive a raw JSON string from the in-memory channel.
     ///
     /// This method blocks until a message is available on the receiver channel.
-    fn receive_message(&mut self) -> Result<Message, Error> {
-        let json_str = self.receiver.recv().map_err(|_| {
+    /// No parsing or validation is performed - that's the responsibility
+    /// of the caller (typically the server layer).
+    fn receive_message(&mut self) -> Result<String, Error> {
+        self.receiver.recv().map_err(|_| {
             Error::TransportError(std::io::Error::new(
                 std::io::ErrorKind::ConnectionReset,
                 "Channel sender disconnected",
             ))
-        })?;
-
-        let value: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
-            Error::TransportError(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-        })?;
-
-        Message::from_json(value)
-    }
-
-    /// Send a JSON-RPC request through the in-memory channel.
-    ///
-    /// Serializes the request and sends it through the sender channel.
-    fn send_request(&mut self, request: &Request) -> Result<(), Error> {
-        let json = serde_json::to_string(request).map_err(|e| {
-            Error::TransportError(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-        })?;
-
-        self.sender.send(json).map_err(|_| {
-            Error::TransportError(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "Channel receiver disconnected",
-            ))
         })
     }
 
-    /// Send a JSON-RPC response through the in-memory channel.
+    /// Send a raw JSON string through the in-memory channel.
     ///
-    /// Serializes the response and sends it through the sender channel.
-    fn send_response(&mut self, response: &Response) -> Result<(), Error> {
-        let json = serde_json::to_string(response).map_err(|e| {
-            Error::TransportError(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-        })?;
-
-        self.sender.send(json).map_err(|_| {
-            Error::TransportError(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "Channel receiver disconnected",
-            ))
-        })
-    }
-
-    /// Send a JSON-RPC notification through the in-memory channel.
-    ///
-    /// Serializes the notification and sends it through the sender channel.
-    fn send_notification(&mut self, notification: &Notification) -> Result<(), Error> {
-        let json = serde_json::to_string(notification).map_err(|e| {
-            Error::TransportError(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-        })?;
-
-        self.sender.send(json).map_err(|_| {
+    /// Sends the JSON string as-is without additional serialization.
+    /// The caller is responsible for serializing JSON-RPC messages
+    /// to JSON strings before calling this method.
+    fn send_message(&mut self, json: &str) -> Result<(), Error> {
+        self.sender.send(json.to_string()).map_err(|_| {
             Error::TransportError(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 "Channel receiver disconnected",
