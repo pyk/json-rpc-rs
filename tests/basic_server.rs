@@ -8,8 +8,6 @@ mod tests {
     use assert_cmd::Command;
     use serde_json::json;
 
-    /// Helper function to send a JSON-RPC request to the basic server and get the response.
-    /// Takes a JSON-RPC request string as input and returns the response string.
     fn send_request(request: &str) -> String {
         let manifest_dir =
             std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set by cargo");
@@ -26,8 +24,7 @@ mod tests {
         String::from_utf8(output.stdout).expect("Response is not valid UTF-8")
     }
 
-    /// Helper function to normalize JSON string (remove trailing newlines for comparison).
-    fn normalize_json(s: String) -> String {
+    fn normalize_json(s: &str) -> String {
         s.trim_end().to_string()
     }
 
@@ -41,21 +38,18 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response = r#"{"jsonrpc":"2.0","result":"Hello, world!","id":1}"#;
 
         assert_eq!(response, expected_response);
     }
 
-    // ============================================================================
-    // Parse Error (-32700)
-    // ============================================================================
 
     #[test]
     fn parse_error_invalid_json() {
         let request = r#"{"jsonrpc":"2.0","method":"hello","params":"world""#;
-        let response = normalize_json(send_request(request));
+        let response = normalize_json(&send_request(request));
 
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error"},"id":null}"#;
@@ -66,7 +60,7 @@ mod tests {
     #[test]
     fn parse_error_malformed_json() {
         let request = r#"invalid json"#;
-        let response = normalize_json(send_request(request));
+        let response = normalize_json(&send_request(request));
 
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error"},"id":null}"#;
@@ -74,9 +68,6 @@ mod tests {
         assert_eq!(response, expected_response);
     }
 
-    // ============================================================================
-    // Invalid Request (-32600)
-    // ============================================================================
 
     #[test]
     fn invalid_request_missing_jsonrpc() {
@@ -87,10 +78,8 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
-        // According to JSON-RPC 2.0 spec, missing jsonrpc field is Invalid Request (-32600)
-        // The id field is valid, so it should be preserved in the error response
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":1}"#;
 
@@ -106,10 +95,8 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
-        // Missing method field - this is a request with id=1 but no method
-        // It should be treated as Invalid Request (-32600), not Method Not Found
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":1}"#;
 
@@ -126,9 +113,8 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
-        // According to JSON-RPC 2.0 spec, jsonrpc must be exactly "2.0"
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":1}"#;
 
@@ -145,11 +131,8 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
-        // According to JSON-RPC 2.0 spec, method must be a String
-        // Non-string method is Invalid Request (-32600), not Method Not Found
-        // The id field is valid, so it should be preserved in the error response
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":1}"#;
 
@@ -160,19 +143,14 @@ mod tests {
     fn invalid_request_empty_object() {
         let request = json!({}).to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
-        // Empty object is missing required jsonrpc and method fields
-        // Should return Invalid Request error
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":null}"#;
 
         assert_eq!(response, expected_response);
     }
 
-    // ============================================================================
-    // Method Not Found (-32601)
-    // ============================================================================
 
     #[test]
     fn method_not_found_nonexistent_method() {
@@ -184,16 +162,13 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32601,"message":"Unknown method: nonexistent"},"id":1}"#;
 
         assert_eq!(response, expected_response);
     }
 
-    // ============================================================================
-    // Invalid Params (-32602)
-    // ============================================================================
 
     #[test]
     fn invalid_params_missing_for_hello() {
@@ -204,9 +179,8 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
-        // params is None (null) when not provided, which is invalid for String parameter
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: null, expected a string"},"id":1}"#;
 
         assert_eq!(response, expected_response);
@@ -222,7 +196,7 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: integer `123`, expected a string"},"id":1}"#;
 
@@ -239,7 +213,7 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: map, expected a string"},"id":1}"#;
 
@@ -256,17 +230,13 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
-        // Array params with multiple elements can't be deserialized as String
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: sequence, expected a string"},"id":1}"#;
 
         assert_eq!(response, expected_response);
     }
 
-    // ============================================================================
-    // Internal Error (-32603)
-    // ============================================================================
 
     #[test]
     fn internal_error() {
@@ -277,16 +247,13 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: Internal error occurred"},"id":1}"#;
 
         assert_eq!(response, expected_response);
     }
 
-    // ============================================================================
-    // Server Error (Custom -32000)
-    // ============================================================================
 
     #[test]
     fn server_error_custom() {
@@ -298,7 +265,7 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32000,"message":"text must be 'world'"},"id":1}"#;
@@ -306,36 +273,14 @@ mod tests {
         assert_eq!(response, expected_response);
     }
 
-    // ============================================================================
-    // Batch Request Errors
-    // ============================================================================
 
-    // TODO: This test is disabled because the Stdio transport reads messages line-by-line,
-    // which means multi-line JSON is treated as separate requests. In a proper implementation,
-    // the transport would read complete JSON objects/arrays as one message.
-    //
-    // #[test]
-    // fn batch_parse_error_invalid_json() {
-    //     let request = r#"[
-    //   {"jsonrpc":"2.0","method":"hello","params":"world","id":1},
-    //   {"jsonrpc":"2.0","method"
-    // ]"#;
-    //
-    //     let response = normalize_json(send_request(request));
-    //
-    //     let expected_response =
-    //         r#"{"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error"},"id":null}"#;
-    //
-    //     assert_eq!(response, expected_response);
-    // }
 
     #[test]
     fn batch_invalid_request_empty_array() {
         let request = json!([]).to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
-        // Empty batch returns invalid request error
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":null}"#;
 
@@ -346,7 +291,7 @@ mod tests {
     fn batch_invalid_individual_request() {
         let request = json!([1]).to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response =
             r#"[{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":null}]"#;
@@ -363,16 +308,13 @@ mod tests {
         ])
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response = r#"[{"jsonrpc":"2.0","result":"Hello, world!","id":1},{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":null},{"jsonrpc":"2.0","error":{"code":-32000,"message":"text must be 'world'"},"id":2}]"#;
 
         assert_eq!(response, expected_response);
     }
 
-    // ============================================================================
-    // Notification Behavior
-    // ============================================================================
 
     #[test]
     fn notification_valid_no_response() {
@@ -385,7 +327,6 @@ mod tests {
 
         let response = send_request(&request);
 
-        // Notifications should not receive any response
         assert_eq!(response, "");
     }
 
@@ -400,7 +341,6 @@ mod tests {
 
         let response = send_request(&request);
 
-        // Notifications with errors should not receive any response
         assert_eq!(response, "");
     }
 
@@ -415,13 +355,9 @@ mod tests {
 
         let response = send_request(&request);
 
-        // Notifications with non-existent method should not receive any response
         assert_eq!(response, "");
     }
 
-    // ============================================================================
-    // Additional Edge Cases
-    // ============================================================================
 
     #[test]
     fn hello_with_empty_string() {
@@ -433,7 +369,7 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32000,"message":"text must be 'world'"},"id":1}"#;
@@ -451,9 +387,8 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
-        // Should fail because "World" != "world" (case-sensitive)
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32000,"message":"text must be 'world'"},"id":1}"#;
 
@@ -470,7 +405,7 @@ mod tests {
         })
         .to_string();
 
-        let response = normalize_json(send_request(&request));
+        let response = normalize_json(&send_request(&request));
 
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32601,"message":"Unknown method: unknown"},"id":1}"#;
 

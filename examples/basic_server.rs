@@ -65,7 +65,7 @@ fn main() -> Result<()> {
     debug!("Registering 'internal_error' method");
     server.register("internal_error", |_params: ()| {
         debug!("Internal error handler called");
-        let error: Result<(), _> = Err(Error::protocol("Internal error occurred"));
+        let error: Result<(), Error> = Err(Error::protocol("Internal error occurred"));
         debug!("Internal error handler returning error: {:?}", error);
         error
     })?;

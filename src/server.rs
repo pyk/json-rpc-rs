@@ -9,23 +9,17 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use serde::Serialize;
+use tracing::debug;
 
 use crate::error::Error;
 use crate::shutdown::ShutdownSignal;
 use crate::transports::{Stdio, Transport};
 use crate::types::{Message, Notification, Request, RequestId, Response};
-use tracing::debug;
 
-/// Internal trait for type erasure of handler functions.
-///
-/// This allows storing handlers with different parameter types
-/// in a HashMap.
 trait HandlerFn: Send + Sync {
-    /// Execute the handler with the given parameters.
     fn call(&self, params: serde_json::Value) -> Result<serde_json::Value, Error>;
 }
 
-/// Type-erased wrapper for a handler function.
 struct HandlerWrapper<F, P, R>
 where
     F: Fn(P) -> Result<R, Error> + Send + Sync + 'static,
@@ -49,16 +43,13 @@ where
     }
 }
 
-/// Job that can be executed by a worker thread.
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
-/// Worker thread in the thread pool.
 struct Worker {
     _handle: thread::JoinHandle<()>,
 }
 
 impl Worker {
-    /// Spawn a new worker thread.
     fn spawn(_id: usize, receiver: Arc<Mutex<std::sync::mpsc::Receiver<Job>>>) -> Self {
         let handle = thread::spawn(move || {
             loop {
@@ -81,14 +72,12 @@ impl Worker {
     }
 }
 
-/// Thread pool for concurrent request handling.
 struct ThreadPool {
     workers: Vec<Worker>,
     sender: Option<std::sync::mpsc::Sender<Job>>,
 }
 
 impl ThreadPool {
-    /// Create a new thread pool with the given number of workers.
     fn new(size: usize) -> Self {
         assert!(size > 0, "Thread pool size must be greater than 0");
 
@@ -107,7 +96,6 @@ impl ThreadPool {
         }
     }
 
-    /// Execute a job in the thread pool.
     fn execute<F>(&self, job: F) -> Result<(), Error>
     where
         F: FnOnce() + Send + 'static,
@@ -136,7 +124,6 @@ impl Drop for ThreadPool {
     }
 }
 
-/// Response data sent from worker threads to main thread.
 struct ResponseData {
     response: Response,
     batch_id: Option<usize>,
@@ -148,30 +135,6 @@ struct BatchContext {
     expected_count: usize,
 }
 
-/// JSON-RPC server with builder pattern.
-///
-/// The server uses a builder pattern for configuration and method registration.
-/// It includes a thread pool for concurrent request handling and supports
-/// graceful shutdown via a shutdown signal.
-///
-/// # Example
-///
-/// ```no_run
-/// use json_rpc::{Server, ShutdownSignal};
-///
-/// let shutdown = ShutdownSignal::new();
-///
-/// let mut server = Server::new()
-///     .with_thread_pool_size(4)
-///     .with_shutdown_signal(shutdown);
-///
-/// server.register("add", |params: (i32, i32)| {
-///     Ok(params.0 + params.1)
-/// })?;
-///
-/// server.run()?;
-/// # Ok::<(), json_rpc::Error>(())
-/// ```
 pub struct Server {
     handlers: HashMap<String, Box<dyn HandlerFn>>,
     thread_pool_size: usize,
@@ -180,10 +143,6 @@ pub struct Server {
 }
 
 impl Server {
-    /// Create a new server with default configuration.
-    ///
-    /// Default thread pool size is the number of CPU cores.
-    /// Default transport is Stdio.
     pub fn new() -> Self {
         Self {
             handlers: HashMap::new(),
@@ -193,43 +152,17 @@ impl Server {
         }
     }
 
-    /// Set the thread pool size.
-    ///
-    /// The thread pool is created when `run()` is called.
-    /// This method validates that the size is greater than 0.
     pub fn with_thread_pool_size(mut self, size: usize) -> Self {
         assert!(size > 0, "Thread pool size must be greater than 0");
         self.thread_pool_size = size;
         self
     }
 
-    /// Set a shutdown signal for graceful shutdown.
-    ///
-    /// If set, the server will check this signal in the message loop
-    /// and shut down gracefully when signaled.
     pub fn with_shutdown_signal(mut self, signal: ShutdownSignal) -> Self {
         self.shutdown_signal = Some(signal);
         self
     }
 
-    /// Set a custom transport for the server.
-    ///
-    /// If not set, the server will use the default Stdio transport.
-    /// This allows using any transport that implements the `Transport` trait.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use json_rpc::{Server, InMemory, Error};
-    ///
-    /// let (transport, _sender) = InMemory::unconnected();
-    ///
-    /// let mut server = Server::new()
-    ///     .with_transport(transport);
-    ///
-    /// server.register("echo", |params: String| Ok(params))?;
-    /// # Ok::<(), Error>(())
-    /// ```
     pub fn with_transport<T>(mut self, transport: T) -> Self
     where
         T: Transport + 'static,
@@ -238,37 +171,6 @@ impl Server {
         self
     }
 
-    /// Register a method handler with type-safe parameters.
-    ///
-    /// # Type Parameters
-    ///
-    /// - `F`: Handler function type
-    /// - `P`: Parameter type (must implement `DeserializeOwned`, `Send`, `Sync`)
-    /// - `R`: Return type (must implement `Serialize`, `Send`, `Sync`)
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use json_rpc::Server;
-    ///
-    /// let mut server = Server::new();
-    ///
-    /// // Register with tuple parameters
-    /// server.register("add", |params: (i32, i32)| {
-    ///     Ok(params.0 + params.1)
-    /// })?;
-    ///
-    /// // Register with struct parameters
-    /// #[derive(serde::Deserialize)]
-    /// struct InitParams {
-    ///     name: String,
-    /// }
-    ///
-    /// server.register("initialize", |params: InitParams| {
-    ///     Ok(format!("Hello, {}!", params.name))
-    /// })?;
-    /// # Ok::<(), json_rpc::Error>(())
-    /// ```
     pub fn register<F, P, R>(&mut self, method: &str, handler: F) -> Result<(), Error>
     where
         F: Fn(P) -> Result<R, Error> + Send + Sync + 'static,
@@ -283,25 +185,6 @@ impl Server {
         Ok(())
     }
 
-    /// Run the server.
-    ///
-    /// This method blocks until shutdown is requested or EOF is received.
-    /// If a shutdown signal was configured, it waits for the signal.
-    /// Otherwise, it waits for EOF on the transport.
-    ///
-    /// Uses the transport configured via `with_transport()`, or the default
-    /// Stdio transport if none was configured.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use json_rpc::Server;
-    ///
-    /// let mut server = Server::new();
-    /// server.register("echo", |params: String| Ok(params))?;
-    /// server.run()?;
-    /// # Ok::<(), json_rpc::Error>(())
-    /// ```
     pub fn run(&mut self) -> Result<(), Error> {
         let mut transport = self
             .transport
@@ -331,7 +214,6 @@ impl Server {
                     break;
                 }
                 Err(e) => {
-                    // Transport error - send internal error response
                     debug!("Transport error: {}", e);
                     let error = crate::types::Error::internal_error("Internal error");
                     let response = Response::error(RequestId::Null, error);
@@ -348,14 +230,12 @@ impl Server {
                 }
             };
 
-            // Parse the JSON string into a Message
             let value: serde_json::Value = match serde_json::from_str(&json_str) {
                 Ok(v) => {
                     debug!("JSON parsed successfully");
                     v
                 }
                 Err(_e) => {
-                    // JSON parse error - send parse error response (-32700) with null id
                     debug!("Failed to parse JSON string: {}", json_str);
                     let error = crate::types::Error::parse_error("Parse error");
                     let response = Response::error(RequestId::Null, error);
@@ -372,22 +252,20 @@ impl Server {
                 }
             };
 
-            // Try to extract id from the JSON value before parsing
-            // This allows us to preserve the id in error responses even if the request is invalid
-            let request_id = value
-                .get("id")
-                .and_then(|id_value| serde_json::from_value::<RequestId>(id_value.clone()).ok());
+            let request_id = value.get("id").and_then(|id_value| match id_value {
+                serde_json::Value::Null => Some(RequestId::Null),
+                serde_json::Value::Number(n) => n.as_u64().map(RequestId::Number),
+                serde_json::Value::String(s) => Some(RequestId::String(s.clone())),
+                _ => None,
+            });
             debug!("Extracted request_id: {:?}", request_id);
 
-            // Parse the JSON value into a Message (validates structure)
             let message = match Message::from_json(value) {
                 Ok(msg) => {
                     debug!("Message parsed successfully");
                     msg
                 }
                 Err(Error::InvalidRequest(e)) => {
-                    // Invalid request - send invalid request error response (-32600)
-                    // Use the extracted id if available, otherwise use null
                     debug!("Invalid Request error caught: {}", e);
                     let error = crate::types::Error::invalid_request("Invalid Request");
                     let id_to_use = request_id.unwrap_or(RequestId::Null);
@@ -405,7 +283,6 @@ impl Server {
                     continue;
                 }
                 Err(e) => {
-                    // Other errors - send internal error response
                     debug!("Error parsing message: {}", e);
                     eprintln!("Error parsing message: {}", e);
                     let error = crate::types::Error::internal_error("Internal error");
@@ -444,7 +321,6 @@ impl Server {
                     let batch_id = next_batch_id;
                     next_batch_id = next_batch_id.wrapping_add(1);
 
-                    // Count non-notification messages (requests and error responses)
                     let request_count = messages
                         .iter()
                         .filter(|m| matches!(m, Message::Request(_) | Message::Response(_)))
@@ -470,7 +346,6 @@ impl Server {
                             batches.remove(&batch_id);
                         }
                     } else {
-                        // All notifications, no response expected
                         eprintln!("Batch contains only notifications - no response sent");
                     }
                 }
@@ -487,15 +362,12 @@ impl Server {
                 {
                     batch.responses[batch_index] = Some(response_data.response);
 
-                    // Check if batch is complete
                     let completed = batch.responses.iter().filter(|r| r.is_some()).count();
                     if completed == batch.expected_count {
-                        // Send all batch responses as an array
                         let responses: Vec<Response> =
                             batch.responses.drain(..).flatten().collect();
 
                         if !responses.is_empty() {
-                            // Send the batch response as a JSON string
                             let batch_json = serde_json::to_string(&responses)?;
                             transport.send_message(&batch_json)?;
                         }
@@ -503,7 +375,6 @@ impl Server {
                         batches.remove(&batch_id);
                     }
                 } else {
-                    // Single response, serialize and send
                     let json = serde_json::to_string(&response_data.response)?;
                     transport.send_message(&json)?;
                 }
@@ -520,7 +391,6 @@ impl Server {
         Ok(())
     }
 
-    /// Process a request in a worker thread and send response back to main thread.
     fn process_request(
         handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
         sender: std::sync::mpsc::Sender<ResponseData>,
@@ -580,9 +450,6 @@ impl Server {
         Ok(())
     }
 
-    /// Process a notification.
-    ///
-    /// Notifications execute the handler but don't return a response.
     fn process_notification(
         handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
         notification: Notification,
@@ -594,27 +461,15 @@ impl Server {
         match handlers.lock() {
             Ok(handlers_lock) => match handlers_lock.get(&method_name) {
                 Some(handler) => {
-                    // Execute the handler but ignore the result (notifications don't get responses)
                     let _ = handler.call(params);
                     Ok(())
                 }
-                None => {
-                    // Method not found for notification - silent error as per spec
-                    Ok(())
-                }
+                None => Ok(()),
             },
-            Err(_) => {
-                // Lock failed - silent error for notifications
-                Ok(())
-            }
+            Err(_) => Ok(()),
         }
     }
 
-    /// Process a batch of messages.
-    ///
-    /// Each request/notification in the batch is processed individually.
-    /// Responses are collected and sent as a batch response.
-    /// Notifications don't generate responses.
     fn process_batch(
         thread_pool: &ThreadPool,
         handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
@@ -654,7 +509,6 @@ impl Server {
                     let index = request_index;
                     request_index += 1;
 
-                    // Send the error response directly
                     sender_clone
                         .send(ResponseData {
                             response,
@@ -669,7 +523,6 @@ impl Server {
                         })?;
                 }
                 _ => {
-                    // Batch or other message types - should not occur in practice
                     debug!("Unexpected message type in batch: {:?}", message);
                 }
             }
