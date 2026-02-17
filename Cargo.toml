@@ -2,6 +2,13 @@
 name = "json-rpc-rs"
 version = "0.1.0"
 edition = "2024"
+description = "A thread pool-based Rust implementation of JSON-RPC 2.0"
+keywords = ["json-rpc", "rpc", "server", "json"]
+categories = ["network-programming"]
+license = "MIT"
+repository = "https://github.com/pyk/json-rpc-rs"
+documentation = "https://docs.rs/json-rpc-rs"
+homepage = "https://github.com/pyk/json-rpc-rs"
 
 [lib]
 name = "json_rpc"
