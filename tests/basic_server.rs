@@ -24,10 +24,6 @@ mod tests {
         String::from_utf8(output.stdout).expect("Response is not valid UTF-8")
     }
 
-    fn normalize_json(s: &str) -> String {
-        s.trim_end().to_string()
-    }
-
     #[test]
     fn hello_success() {
         let request = json!({
@@ -37,33 +33,26 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response = r#"{"jsonrpc":"2.0","result":"Hello, world!","id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
     #[test]
     fn parse_error_invalid_json() {
         let request = r#"{"jsonrpc":"2.0","method":"hello","params":"world""#;
-        let response = normalize_json(&send_request(request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error"},"id":null}"#;
-
         assert_eq!(response, expected_response);
     }
 
     #[test]
     fn parse_error_malformed_json() {
         let request = r#"invalid json"#;
-        let response = normalize_json(&send_request(request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error"},"id":null}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -75,12 +64,9 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -92,12 +78,9 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -110,9 +93,7 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":1}"#;
 
@@ -128,9 +109,7 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":1}"#;
 
@@ -140,12 +119,9 @@ mod tests {
     #[test]
     fn invalid_request_empty_object() {
         let request = json!({}).to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":null}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -158,11 +134,8 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32601,"message":"Unknown method: nonexistent"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -174,11 +147,8 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: null, expected a string"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -191,11 +161,8 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: integer `123`, expected a string"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -208,11 +175,8 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: map, expected a string"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -225,11 +189,8 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: sequence, expected a string"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -241,11 +202,8 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: Internal error occurred"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -258,9 +216,7 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32000,"message":"text must be 'world'"},"id":1}"#;
 
@@ -270,24 +226,18 @@ mod tests {
     #[test]
     fn batch_invalid_request_empty_array() {
         let request = json!([]).to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":null}"#;
-
         assert_eq!(response, expected_response);
     }
 
     #[test]
     fn batch_invalid_individual_request() {
         let request = json!([1]).to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"[{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":null}]"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -299,11 +249,8 @@ mod tests {
             {"jsonrpc": "2.0", "method": "hello", "params": "earth", "id": 2}
         ])
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response = r#"[{"jsonrpc":"2.0","result":"Hello, world!","id":1},{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":null},{"jsonrpc":"2.0","error":{"code":-32000,"message":"text must be 'world'"},"id":2}]"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -315,9 +262,7 @@ mod tests {
             "params": "world"
         })
         .to_string();
-
-        let response = send_request(&request);
-
+        let response = send_request(&request).trim_end().to_string();
         assert_eq!(response, "");
     }
 
@@ -329,9 +274,7 @@ mod tests {
             "params": 123
         })
         .to_string();
-
-        let response = send_request(&request);
-
+        let response = send_request(&request).trim_end().to_string();
         assert_eq!(response, "");
     }
 
@@ -343,9 +286,7 @@ mod tests {
             "params": "test"
         })
         .to_string();
-
-        let response = send_request(&request);
-
+        let response = send_request(&request).trim_end().to_string();
         assert_eq!(response, "");
     }
 
@@ -358,12 +299,9 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32000,"message":"text must be 'world'"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 
@@ -376,9 +314,7 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response =
             r#"{"jsonrpc":"2.0","error":{"code":-32000,"message":"text must be 'world'"},"id":1}"#;
 
@@ -394,11 +330,8 @@ mod tests {
             "id": 1
         })
         .to_string();
-
-        let response = normalize_json(&send_request(&request));
-
+        let response = send_request(&request).trim_end().to_string();
         let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32601,"message":"Unknown method: unknown"},"id":1}"#;
-
         assert_eq!(response, expected_response);
     }
 }
