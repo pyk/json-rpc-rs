@@ -37,7 +37,7 @@
 
 use anyhow::Result;
 use json_rpc::{Error, Server};
-use tracing::{debug, info};
+use tracing::info;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -48,39 +48,29 @@ fn main() -> Result<()> {
     info!("Initializing basic server for error handling tests");
     let mut server = Server::new();
 
-    debug!("Registering 'hello' method");
     server.register("hello", |params: String| {
-        debug!("Hello handler called with params: {:?}", params);
         if params != "world" {
-            debug!("Hello handler returning error: text must be 'world'");
             return Err(Error::rpc(-32000, "text must be 'world'"));
         }
         let result = Ok(format!("Hello, {}!", params));
-        debug!("Hello handler returning success: {:?}", result);
         result
     })?;
 
-    debug!("Registering 'internal_error' method");
     server.register("internal_error", |_params: ()| {
-        debug!("Internal error handler called");
         let error: Result<(), Error> = Err(Error::protocol("Internal error occurred"));
-        debug!("Internal error handler returning error: {:?}", error);
         error
     })?;
 
-    eprintln!("Basic server started. Send JSON-RPC messages via stdin.");
-    eprintln!();
-    eprintln!("Available methods:");
-    eprintln!(
+    info!("Basic server started. Send JSON-RPC messages via stdin.");
+    info!("Available methods:");
+    info!(
         "  hello(text: String) - Returns greeting if text is 'world', otherwise returns server error"
     );
-    eprintln!("  internal_error() - Simulates internal server error");
-    eprintln!();
-    eprintln!("Examples:");
-    eprintln!("  {{\"jsonrpc\":\"2.0\",\"method\":\"hello\",\"params\":\"world\",\"id\":1}}");
-    eprintln!("  {{\"jsonrpc\":\"2.0\",\"method\":\"hello\",\"params\":\"earth\",\"id\":2}}");
-    eprintln!("  {{\"jsonrpc\":\"2.0\",\"method\":\"internal_error\",\"id\":3}}");
-    eprintln!();
+    info!("  internal_error() - Simulates internal server error");
+    info!("Examples:");
+    info!("  {{\"jsonrpc\":\"2.0\",\"method\":\"hello\",\"params\":\"world\",\"id\":1}}");
+    info!("  {{\"jsonrpc\":\"2.0\",\"method\":\"hello\",\"params\":\"earth\",\"id\":2}}");
+    info!("  {{\"jsonrpc\":\"2.0\",\"method\":\"internal_error\",\"id\":3}}");
 
     info!("Starting server run loop");
     server.run()?;
