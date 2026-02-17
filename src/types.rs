@@ -5,6 +5,7 @@
 
 use std::fmt;
 
+use crate::error::Error as InternalError;
 use serde::{Deserialize, Serialize};
 
 /// JSON-RPC 2.0 request message.
@@ -48,14 +49,14 @@ impl Request {
 pub struct Response {
     /// JSON-RPC version. Always "2.0".
     pub jsonrpc: String,
-    /// Request identifier matching the original request.
-    pub id: RequestId,
     /// Result of the method invocation (if successful).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
     /// Error information (if the method invocation failed).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<Error>,
+    /// Request identifier matching the original request.
+    pub id: RequestId,
 }
 
 impl Response {
@@ -220,18 +221,32 @@ impl Message {
     /// The method first checks if the message has an `id` field to distinguish
     /// between requests and notifications. Then it checks if there's an `error`
     /// field to distinguish between requests and responses.
-    pub fn from_json(value: serde_json::Value) -> Result<Self, serde_json::Error> {
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidRequest` if the JSON is not a valid
+    /// JSON-RPC message structure (e.g., wrong field types, missing required fields).
+    /// This is distinct from parse errors (-32700) which occur for invalid JSON syntax.
+    pub fn from_json(value: serde_json::Value) -> Result<Self, InternalError> {
         let value_ref = &value;
         if value_ref.get("id").is_some() {
             if value_ref.get("error").is_some() {
-                Ok(Message::Response(serde_json::from_value(value)?))
+                serde_json::from_value(value)
+                    .map(Message::Response)
+                    .map_err(|e| InternalError::invalid_request(e.to_string()))
             } else if value_ref.get("method").is_some() {
-                Ok(Message::Request(serde_json::from_value(value)?))
+                serde_json::from_value(value)
+                    .map(Message::Request)
+                    .map_err(|e| InternalError::invalid_request(e.to_string()))
             } else {
-                Ok(Message::Response(serde_json::from_value(value)?))
+                serde_json::from_value(value)
+                    .map(Message::Response)
+                    .map_err(|e| InternalError::invalid_request(e.to_string()))
             }
         } else {
-            Ok(Message::Notification(serde_json::from_value(value)?))
+            serde_json::from_value(value)
+                .map(Message::Notification)
+                .map_err(|e| InternalError::invalid_request(e.to_string()))
         }
     }
 

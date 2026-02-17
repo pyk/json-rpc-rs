@@ -115,7 +115,7 @@ impl Transport for InMemory {
             Error::TransportError(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
         })?;
 
-        Message::from_json(value).map_err(Error::from)
+        Message::from_json(value)
     }
 
     /// Send a JSON-RPC request through the in-memory channel.

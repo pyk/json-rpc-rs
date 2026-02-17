@@ -15,13 +15,21 @@ pub enum Error {
     #[error("Protocol error: {0}")]
     ProtocolError(String),
 
+    /// JSON-RPC error with specific code and message.
+    #[error("JSON-RPC error: code={code}, message={message}")]
+    RpcError { code: i32, message: String },
+
     /// Transport I/O error.
     #[error("Transport error: {0}")]
     TransportError(#[from] io::Error),
 
     /// JSON parsing error.
-    #[error("JSON parse error: {0}")]
+    #[error("Protocol error: {0}")]
     ParseError(#[from] serde_json::Error),
+
+    /// Invalid JSON-RPC request error.
+    #[error("Invalid Request: {0}")]
+    InvalidRequest(String),
 
     /// Operation was cancelled.
     #[error("Operation was cancelled")]
@@ -37,5 +45,18 @@ impl Error {
     /// Create a new transport error.
     pub fn transport(error: impl Into<io::Error>) -> Self {
         Self::TransportError(error.into())
+    }
+
+    /// Create a new JSON-RPC error with a specific code and message.
+    pub fn rpc(code: i32, message: impl Into<String>) -> Self {
+        Self::RpcError {
+            code,
+            message: message.into(),
+        }
+    }
+
+    /// Create a new Invalid Request error (-32600).
+    pub fn invalid_request(message: impl Into<String>) -> Self {
+        Self::InvalidRequest(message.into())
     }
 }

@@ -13,7 +13,7 @@ use serde::Serialize;
 use crate::error::Error;
 use crate::shutdown::ShutdownSignal;
 use crate::transports::{Stdio, Transport};
-use crate::types::{Message, Notification, Request, Response};
+use crate::types::{Message, Notification, Request, RequestId, Response};
 
 /// Internal trait for type erasure of handler functions.
 ///
@@ -316,9 +316,45 @@ impl Server {
                 Err(Error::TransportError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     break;
                 }
-                Err(e) => {
-                    eprintln!("Transport error: {}", e);
+                Err(Error::ParseError(_e)) => {
+                    // Send parse error response (-32700) with null id
+                    let error = crate::types::Error::parse_error("Parse error");
+                    let response = Response::error(RequestId::Null, error);
+                    let _ = transport.send_response(&response);
+                    continue;
+                }
+                Err(Error::InvalidRequest(e)) => {
+                    // Send invalid request error response (-32600) with null id
+                    let error = crate::types::Error::invalid_request(e);
+                    let response = Response::error(RequestId::Null, error);
+                    let _ = transport.send_response(&response);
+                    continue;
+                }
+                Err(Error::ProtocolError(_e)) => {
+                    // Send invalid request error response (-32600) with null id
+                    let error = crate::types::Error::invalid_request("Invalid Request");
+                    let response = Response::error(RequestId::Null, error);
+                    let _ = transport.send_response(&response);
+                    continue;
+                }
+                Err(Error::Cancelled) => {
+                    // Cancelled is fatal, break the loop
                     break;
+                }
+                Err(Error::RpcError { .. }) => {
+                    // Send internal error response (-32603) with null id
+                    let error = crate::types::Error::internal_error("Internal error");
+                    let response = Response::error(RequestId::Null, error);
+                    let _ = transport.send_response(&response);
+                    continue;
+                }
+                Err(e) => {
+                    // Catch-all for any other errors - send internal error response
+                    eprintln!("Unexpected error: {}", e);
+                    let error = crate::types::Error::internal_error(e.to_string());
+                    let response = Response::error(RequestId::Null, error);
+                    let _ = transport.send_response(&response);
+                    continue;
                 }
             };
 
@@ -372,6 +408,10 @@ impl Server {
             Ok(handlers_lock) => match handlers_lock.get(&method_name) {
                 Some(handler) => match handler.call(params) {
                     Ok(result) => Response::success(id, result),
+                    Err(Error::RpcError { code, message }) => {
+                        let error = crate::types::Error::new(code, message, None);
+                        Response::error(id, error)
+                    }
                     Err(e) => {
                         let error = crate::types::Error::new(-32603, e.to_string(), None);
                         Response::error(id, error)

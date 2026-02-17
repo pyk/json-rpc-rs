@@ -74,7 +74,7 @@ impl Transport for Stdio {
     fn receive_message(&mut self) -> Result<Message, Error> {
         let json_str = self.read_message()?;
         let value: serde_json::Value = serde_json::from_str(&json_str)?;
-        Message::from_json(value).map_err(Error::from)
+        Message::from_json(value)
     }
 
     /// Send a JSON-RPC request.
