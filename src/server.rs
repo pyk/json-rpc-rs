@@ -5,8 +5,8 @@
 //! request handling.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
 
 use serde::Serialize;
 use tracing::debug;
@@ -16,111 +16,44 @@ use crate::shutdown::ShutdownSignal;
 use crate::transports::{Stdio, Transport};
 use crate::types::{Message, Notification, Request, RequestId, Response};
 
+use std::future::Future;
+use std::pin::Pin;
+
 trait HandlerFn: Send + Sync {
-    fn call(&self, params: serde_json::Value) -> Result<serde_json::Value, Error>;
+    fn call(
+        &self,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, Error>> + Send>>;
 }
 
-struct HandlerWrapper<F, P, R>
+struct HandlerWrapper<F, P, R, Fut>
 where
-    F: Fn(P) -> Result<R, Error> + Send + Sync + 'static,
+    F: Fn(P) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<R, Error>> + Send + 'static,
     P: serde::de::DeserializeOwned + Send + Sync + 'static,
     R: Serialize + Send + Sync + 'static,
 {
     f: Arc<F>,
-    _phantom: std::marker::PhantomData<(P, R)>,
+    _phantom: std::marker::PhantomData<(P, R, Fut)>,
 }
 
-impl<F, P, R> HandlerFn for HandlerWrapper<F, P, R>
+impl<F, P, R, Fut> HandlerFn for HandlerWrapper<F, P, R, Fut>
 where
-    F: Fn(P) -> Result<R, Error> + Send + Sync + 'static,
+    F: Fn(P) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<R, Error>> + Send + Sync + 'static,
     P: serde::de::DeserializeOwned + Send + Sync + 'static,
     R: Serialize + Send + Sync + 'static,
 {
-    fn call(&self, params: serde_json::Value) -> Result<serde_json::Value, Error> {
-        let parsed: P = serde_json::from_value(params)?;
-        let result = (self.f)(parsed)?;
-        Ok(serde_json::to_value(result)?)
-    }
-}
-
-type Job = Box<dyn FnOnce() + Send + 'static>;
-
-struct Worker {
-    _handle: thread::JoinHandle<()>,
-}
-
-impl Worker {
-    fn spawn(_id: usize, receiver: Arc<Mutex<std::sync::mpsc::Receiver<Job>>>) -> Self {
-        let handle = thread::spawn(move || {
-            loop {
-                let job = {
-                    let rx = match receiver.lock() {
-                        Ok(guard) => guard,
-                        Err(_) => break,
-                    };
-                    rx.recv()
-                };
-
-                match job {
-                    Ok(job) => job(),
-                    Err(_) => break,
-                }
-            }
-        });
-
-        Self { _handle: handle }
-    }
-}
-
-struct ThreadPool {
-    workers: Vec<Worker>,
-    sender: Option<std::sync::mpsc::Sender<Job>>,
-}
-
-impl ThreadPool {
-    fn new(size: usize) -> Self {
-        assert!(size > 0, "Thread pool size must be greater than 0");
-
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let receiver = Arc::new(Mutex::new(receiver));
-
-        let mut workers = Vec::with_capacity(size);
-
-        for id in 0..size {
-            workers.push(Worker::spawn(id, Arc::clone(&receiver)));
-        }
-
-        Self {
-            workers,
-            sender: Some(sender),
-        }
-    }
-
-    fn execute<F>(&self, job: F) -> Result<(), Error>
-    where
-        F: FnOnce() + Send + 'static,
-    {
-        let job = Box::new(job);
-        let sender = self.sender.as_ref().ok_or_else(|| {
-            Error::TransportError(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Thread pool is not available",
-            ))
-        })?;
-
-        sender.send(job).map_err(|_| {
-            Error::TransportError(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "Failed to send job to thread pool",
-            ))
+    fn call(
+        &self,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, Error>> + Send>> {
+        let f = Arc::clone(&self.f);
+        Box::pin(async move {
+            let parsed: P = serde_json::from_value(params)?;
+            let result = f(parsed).await?;
+            Ok(serde_json::to_value(result)?)
         })
-    }
-}
-
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        drop(self.sender.take());
-        for _worker in &mut self.workers {}
     }
 }
 
@@ -137,7 +70,6 @@ struct BatchContext {
 
 pub struct Server {
     handlers: HashMap<String, Box<dyn HandlerFn>>,
-    thread_pool_size: usize,
     shutdown_signal: Option<ShutdownSignal>,
     transport: Option<Box<dyn Transport>>,
 }
@@ -146,16 +78,9 @@ impl Server {
     pub fn new() -> Self {
         Self {
             handlers: HashMap::new(),
-            thread_pool_size: num_cpus::get(),
             shutdown_signal: None,
             transport: None,
         }
-    }
-
-    pub fn with_thread_pool_size(mut self, size: usize) -> Self {
-        assert!(size > 0, "Thread pool size must be greater than 0");
-        self.thread_pool_size = size;
-        self
     }
 
     pub fn with_shutdown_signal(mut self, signal: ShutdownSignal) -> Self {
@@ -171,9 +96,13 @@ impl Server {
         self
     }
 
-    pub fn register<F, P, R>(&mut self, method: &str, handler: F) -> Result<(), Error>
+    /// Register an asynchronous handler for a JSON-RPC method.
+    ///
+    /// The handler must be async and can perform async operations.
+    pub fn register<F, P, R, Fut>(&mut self, method: &str, handler: F) -> Result<(), Error>
     where
-        F: Fn(P) -> Result<R, Error> + Send + Sync + 'static,
+        F: Fn(P) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<R, Error>> + Send + Sync + 'static,
         P: serde::de::DeserializeOwned + Send + Sync + 'static,
         R: Serialize + Send + Sync + 'static,
     {
@@ -190,10 +119,9 @@ impl Server {
             .transport
             .take()
             .unwrap_or_else(|| Box::new(Stdio::default()) as Box<dyn Transport>);
-        let thread_pool = ThreadPool::new(self.thread_pool_size);
-        let handlers = Arc::new(std::sync::Mutex::new(std::mem::take(&mut self.handlers)));
+        let handlers = Arc::new(Mutex::new(std::mem::take(&mut self.handlers)));
         let shutdown_signal = self.shutdown_signal.clone();
-        let (response_sender, response_receiver) = std::sync::mpsc::channel::<ResponseData>();
+        let (response_sender, mut response_receiver) = mpsc::channel::<ResponseData>(100);
         let mut batches: HashMap<usize, BatchContext> = HashMap::new();
         let mut next_batch_id: usize = 0;
 
@@ -305,15 +233,16 @@ impl Server {
             match message {
                 Message::Request(request) => {
                     let sender_clone = response_sender.clone();
-                    thread_pool.execute(move || {
-                        if let Err(e) = Self::process_request(handlers_clone, sender_clone, request)
+                    tokio::spawn(async move {
+                        if let Err(e) =
+                            Self::process_request(handlers_clone, sender_clone, request).await
                         {
                             eprintln!("Error processing request: {}", e);
                         }
-                    })?;
+                    });
                 }
                 Message::Notification(notification) => {
-                    if let Err(e) = Self::process_notification(handlers_clone, notification) {
+                    if let Err(e) = Self::process_notification(handlers_clone, notification).await {
                         eprintln!("Error processing notification: {}", e);
                     }
                 }
@@ -336,12 +265,13 @@ impl Server {
                         );
 
                         if let Err(e) = Self::process_batch(
-                            &thread_pool,
                             handlers_clone,
                             response_sender.clone(),
                             batch_id,
                             messages,
-                        ) {
+                        )
+                        .await
+                        {
                             eprintln!("Error processing batch: {}", e);
                             batches.remove(&batch_id);
                         }
@@ -352,9 +282,7 @@ impl Server {
                 Message::Response(_response) => {}
             }
 
-            while let Ok(response_data) =
-                response_receiver.recv_timeout(std::time::Duration::from_millis(100))
-            {
+            while let Some(response_data) = response_receiver.recv().await {
                 if let Some(batch_id) = response_data.batch_id
                     && let Some(batch_index) = response_data.batch_index
                     && let Some(batch) = batches.get_mut(&batch_id)
@@ -381,9 +309,7 @@ impl Server {
             }
         }
 
-        while let Ok(response_data) =
-            response_receiver.recv_timeout(std::time::Duration::from_millis(100))
-        {
+        while let Some(response_data) = response_receiver.recv().await {
             let json = serde_json::to_string(&response_data.response)?;
             transport.send_message(&json)?;
         }
@@ -391,17 +317,17 @@ impl Server {
         Ok(())
     }
 
-    fn process_request(
-        handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
-        sender: std::sync::mpsc::Sender<ResponseData>,
+    async fn process_request(
+        handlers: Arc<Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
+        sender: mpsc::Sender<ResponseData>,
         request: Request,
     ) -> Result<(), Error> {
-        Self::process_request_with_batch(handlers, sender, request, None, None)
+        Self::process_request_with_batch(handlers, sender, request, None, None).await
     }
 
-    fn process_request_with_batch(
-        handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
-        sender: std::sync::mpsc::Sender<ResponseData>,
+    async fn process_request_with_batch(
+        handlers: Arc<Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
+        sender: mpsc::Sender<ResponseData>,
         request: Request,
         batch_id: Option<usize>,
         batch_index: Option<usize>,
@@ -410,32 +336,28 @@ impl Server {
         let method_name = request.method.clone();
         let params = request.params.unwrap_or(serde_json::Value::Null);
 
-        let response = match handlers.lock() {
-            Ok(handlers_lock) => match handlers_lock.get(&method_name) {
-                Some(handler) => match handler.call(params) {
-                    Ok(result) => Response::success(id, result),
-                    Err(Error::RpcError { code, message }) => {
-                        let error = crate::types::Error::new(code, message, None);
-                        Response::error(id, error)
-                    }
-                    Err(e) => {
-                        let error = crate::types::Error::new(-32603, e.to_string(), None);
-                        Response::error(id, error)
-                    }
-                },
-                None => {
-                    let error = crate::types::Error::method_not_found(format!(
-                        "Unknown method: {}",
-                        method_name
-                    ));
+        let handlers_lock = handlers.lock().await;
+        let response = match handlers_lock.get(&method_name) {
+            Some(handler) => match handler.call(params).await {
+                Ok(result) => Response::success(id, result),
+                Err(Error::RpcError { code, message }) => {
+                    let error = crate::types::Error::new(code, message, None);
+                    Response::error(id, error)
+                }
+                Err(e) => {
+                    let error = crate::types::Error::new(-32603, e.to_string(), None);
                     Response::error(id, error)
                 }
             },
-            Err(_) => {
-                let error = crate::types::Error::internal_error("Internal server error");
+            None => {
+                let error = crate::types::Error::method_not_found(format!(
+                    "Unknown method: {}",
+                    method_name
+                ));
                 Response::error(id, error)
             }
         };
+        drop(handlers_lock);
 
         sender
             .send(ResponseData {
@@ -443,6 +365,7 @@ impl Server {
                 batch_id,
                 batch_index,
             })
+            .await
             .map_err(|e| {
                 Error::TransportError(std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))
             })?;
@@ -450,30 +373,24 @@ impl Server {
         Ok(())
     }
 
-    fn process_notification(
-        handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
+    async fn process_notification(
+        handlers: Arc<Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
         notification: Notification,
     ) -> Result<(), Error> {
         eprintln!("Processing notification: {}", notification.method);
         let method_name = notification.method.clone();
         let params = notification.params.unwrap_or(serde_json::Value::Null);
 
-        match handlers.lock() {
-            Ok(handlers_lock) => match handlers_lock.get(&method_name) {
-                Some(handler) => {
-                    let _ = handler.call(params);
-                    Ok(())
-                }
-                None => Ok(()),
-            },
-            Err(_) => Ok(()),
+        let handlers_lock = handlers.lock().await;
+        if let Some(handler) = handlers_lock.get(&method_name) {
+            let _ = handler.call(params).await;
         }
+        Ok(())
     }
 
-    fn process_batch(
-        thread_pool: &ThreadPool,
-        handlers: Arc<std::sync::Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
-        sender: std::sync::mpsc::Sender<ResponseData>,
+    async fn process_batch(
+        handlers: Arc<Mutex<HashMap<String, Box<dyn HandlerFn>>>>,
+        sender: mpsc::Sender<ResponseData>,
         batch_id: usize,
         messages: Vec<Message>,
     ) -> Result<(), Error> {
@@ -487,20 +404,23 @@ impl Server {
                     let index = request_index;
                     request_index += 1;
 
-                    thread_pool.execute(move || {
+                    tokio::spawn(async move {
                         if let Err(e) = Self::process_request_with_batch(
                             handlers_clone,
                             sender_clone,
                             request,
                             Some(batch_id),
                             Some(index),
-                        ) {
+                        )
+                        .await
+                        {
                             eprintln!("Error processing request in batch: {}", e);
                         }
-                    })?;
+                    });
                 }
                 Message::Notification(notification) => {
-                    if let Err(e) = Self::process_notification(handlers.clone(), notification) {
+                    if let Err(e) = Self::process_notification(handlers.clone(), notification).await
+                    {
                         eprintln!("Error processing notification in batch: {}", e);
                     }
                 }
@@ -515,6 +435,7 @@ impl Server {
                             batch_id: Some(batch_id),
                             batch_index: Some(index),
                         })
+                        .await
                         .map_err(|e| {
                             Error::TransportError(std::io::Error::new(
                                 std::io::ErrorKind::BrokenPipe,

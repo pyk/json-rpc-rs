@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
     info!("Initializing echo server");
     let mut server = Server::new();
 
-    server.register("echo", |params: serde_json::Value| {
+    server.register("echo", |params: serde_json::Value| async move {
         let result = Ok(params);
         result
     })?;

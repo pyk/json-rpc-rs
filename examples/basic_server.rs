@@ -49,17 +49,15 @@ async fn main() -> Result<()> {
     info!("Initializing basic server for error handling tests");
     let mut server = Server::new();
 
-    server.register("hello", |params: String| {
+    server.register("hello", |params: String| async move {
         if params != "world" {
             return Err(Error::rpc(-32000, "text must be 'world'"));
         }
-        let result = Ok(format!("Hello, {}!", params));
-        result
+        Ok(format!("Hello, {}!", params))
     })?;
 
-    server.register("internal_error", |_params: ()| {
-        let error: Result<(), Error> = Err(Error::protocol("Internal error occurred"));
-        error
+    server.register("internal_error", |_params: ()| async move {
+        Err::<(), Error>(Error::protocol("Internal error occurred"))
     })?;
 
     info!("Basic server started. Send JSON-RPC messages via stdin.");
