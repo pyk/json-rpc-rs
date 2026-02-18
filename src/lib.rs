@@ -125,12 +125,6 @@
 //! reads newline-delimited JSON from stdin and writes responses to stdout.
 //! The InMemory transport provides an in-memory channel for testing.
 //! Implement custom transports by implementing the Transport trait.
-//!
-//! # Limitations
-//!
-//! Batch requests are not yet supported. Sending a batch request will return
-//! an internal error (-32603) with the message "Batch requests not yet supported".
-//! Batch support will be added in a future version.
 
 pub use error::Error;
 pub use methods::Methods;
@@ -145,12 +139,6 @@ pub use types::{Message, Notification, Request, RequestId, Response};
 ///
 /// Each transport implementation handles its own serving logic, allowing
 /// for different communication patterns (continuous stream, request/response, etc.).
-///
-/// # Limitations
-///
-/// Batch requests are not yet supported. Sending a batch request will return
-/// an internal error (-32603) with the message "Batch requests not yet supported".
-/// Batch support will be added in a future version.
 ///
 /// # Example
 ///

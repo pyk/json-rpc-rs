@@ -6,6 +6,87 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-02-18 - "Async JSON-RPC"
+
+### Breaking Changes
+
+#### Major Architecture Change: Thread Pool to Async
+
+The library has been completely refactored from a thread pool-based
+implementation to an async/tokio-based architecture. This is a major breaking
+change.
+
+**API Changes:**
+
+- `Server::new()` replaced with `Methods::new()`
+- `server.register()` replaced with `methods.add()`
+- `server.run()` replaced with `json_rpc::serve(transport, methods)`
+- Method handlers must now be async functions instead of sync closures
+- Example:
+
+    ```rust
+    // Old API
+    server.register("add", |params: (i32, i32)| {
+        Ok(params.0 + params.1)
+    })?;
+    server.run()?;
+
+    // New API
+    methods.add("add", |params: (i32, i32)| async move {
+        Ok(params.0 + params.1)
+    });
+    json_rpc::serve(transport, methods).await?;
+    ```
+
+**Removed Features:**
+
+- Thread pool configuration (concurrency now handled by tokio's task scheduler)
+- `ShutdownSignal` for graceful server shutdown
+- `CancellationToken` for request cancellation
+- `with_thread_pool_size()` method
+- `with_shutdown_signal()` method
+- `with_transport()` method (transport now passed to `serve()`)
+- `Server` type and all its methods
+
+**New Features:**
+
+- Full async/await support built on tokio
+- HTTP transport using axum web framework
+- Improved transport abstraction - each transport implements its own serving
+  logic
+- Better separation of concerns between protocol handling and transport
+
+**Module Changes:**
+
+- `src/server.rs` removed (functionality moved to lib.rs and transports)
+- `src/shutdown.rs` removed
+- `src/cancellation.rs` removed
+- `src/methods.rs` added (method registry with builder pattern)
+- `src/transports/http.rs` added (new HTTP transport)
+
+**Dependency Changes:**
+
+- Added: `tokio` (1.0) - async runtime
+- Added: `axum` (0.7) - HTTP web server framework
+- Removed: `num_cpus` - no longer needed
+- Removed: `assert_cmd` - testing infrastructure changed
+
+**Migration Guide:**
+
+To migrate from the old thread pool-based API:
+
+1. Add `tokio` to your `Cargo.toml` with `features = ["full"]`
+2. Change all method handlers to async functions
+3. Replace `Server::new()` with `Methods::new()`
+4. Replace `server.register()` calls with `methods.add()`
+5. Replace `server.run()` with `json_rpc::serve(transport, methods).await`
+6. Remove any shutdown signal or cancellation token usage
+7. Update to use one of the three transports: `Stdio`, `Http`, or `InMemory`
+
+[0.2.0]: https://github.com/pyk/json-rpc-rs/releases/tag/v0.2.0
+
+---
+
 ## [0.1.0] - 2026-02-17 - "Thread Pool Builder"
 
 ### Added
