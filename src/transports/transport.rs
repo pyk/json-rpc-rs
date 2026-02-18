@@ -4,32 +4,62 @@
 //! must support for JSON-RPC communication.
 
 use crate::error::Error;
+use crate::methods::Methods;
 
 /// Trait defining the interface for JSON-RPC transports.
 ///
-/// A transport is responsible for sending and receiving raw JSON strings.
-/// Different transport implementations can support different communication
-/// mechanisms (stdio, TCP, WebSocket, in-memory, etc.).
+/// A transport is responsible for serving JSON-RPC messages using its
+/// specific communication mechanism. Different transport implementations
+/// can support different patterns:
 ///
-/// The transport layer does NOT handle JSON-RPC message parsing or validation.
-/// It only handles I/O operations - reading and writing raw JSON strings.
+/// - **Stdio**: Continuous stream of newline-delimited JSON over stdin/stdout
+/// - **HTTP**: Request/response pattern with HTTP POST
+/// - **InMemory**: In-memory channel for testing
+///
+/// The `serve` method contains all the logic for receiving messages,
+/// processing them through the method registry, and sending responses.
+/// This allows each transport to implement the pattern that best suits
+/// its communication mechanism.
+///
+/// # Example
+///
+/// ```no_run
+/// use json_rpc::{Methods, Stdio, Transport};
+/// use serde_json::Value;
+///
+/// async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
+///     Ok(params)
+/// }
+///
+/// let methods = Methods::new().add("echo", echo);
+/// let transport = Stdio::new();
+/// transport.serve(methods).await.unwrap();
+/// ```
 pub trait Transport {
-    /// Receive a raw JSON string from the transport.
+    /// Serve the JSON-RPC server with the given methods.
     ///
-    /// This method is async and will wait until a complete message is received,
-    /// or return an error if the transport is closed or encounters
-    /// an error.
+    /// This method starts the server and runs until shutdown or an error occurs.
+    /// The transport is responsible for:
     ///
-    /// The returned string is a raw JSON string that needs to be
-    /// parsed and validated by the caller (typically the server layer).
-    async fn receive_message(&mut self) -> Result<String, Error>;
-
-    /// Send a raw JSON string through the transport.
+    /// 1. Receiving incoming messages according to its communication pattern
+    /// 2. Parsing and validating JSON-RPC messages
+    /// 3. Routing requests to the appropriate method handlers
+    /// 4. Sending responses back through the same communication channel
     ///
-    /// Sends the JSON string as-is according to the transport's
-    /// wire format (e.g., newline-delimited JSON for stdio).
+    /// # Arguments
     ///
-    /// The caller (typically the server layer) is responsible for
-    /// serializing JSON-RPC messages to JSON strings before calling this method.
-    async fn send_message(&mut self, json: &str) -> Result<(), Error>;
+    /// * `methods` - The method registry containing all registered JSON-RPC methods
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when the server shuts down gracefully, or an error if
+    /// the server encounters a fatal error.
+    ///
+    /// # Note
+    ///
+    /// This method takes `self` by value, which means the transport is consumed
+    /// when serving starts. This allows the transport to manage its resources
+    /// (like file handles, sockets, etc.) as needed.
+    fn serve(self, methods: Methods)
+    -> impl std::future::Future<Output = Result<(), Error>> + Send;
 }

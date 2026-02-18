@@ -30,6 +30,10 @@ tracing = "0.1"
 # Async runtime
 tokio = {version = "1", features = ["rt", "io-std", "io-util", "sync"]}
 
+# HTTP Transports
+axum = "0.8"
+http = "1.4"
+
 [dev-dependencies]
 # Error handling for examples
 anyhow = "1.0"

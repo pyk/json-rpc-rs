@@ -5,6 +5,7 @@
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 
+use crate::Methods;
 use crate::error::Error;
 use crate::transports::Transport;
 
@@ -12,57 +13,77 @@ use crate::transports::Transport;
 ///
 /// This transport reads newline-delimited JSON from stdin and writes
 /// newline-terminated JSON to stdout. It uses buffered async I/O for efficiency.
-pub struct Stdio {
-    reader: BufReader<tokio::io::Stdin>,
-    writer: BufWriter<tokio::io::Stdout>,
-}
+pub struct Stdio;
 
 impl Stdio {
     /// Create a new stdio transport.
     ///
     /// Uses stdin for reading and stdout for writing.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use json_rpc::Stdio;
+    ///
+    /// let transport = Stdio::new();
+    /// ```
     pub fn new() -> Self {
-        Self {
-            reader: BufReader::new(tokio::io::stdin()),
-            writer: BufWriter::new(tokio::io::stdout()),
-        }
+        Self
+    }
+}
+
+impl Default for Stdio {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl Transport for Stdio {
-    /// Receive a raw JSON string from stdin.
+    /// Serve the JSON-RPC server using stdio transport.
     ///
-    /// Reads a newline-delimited JSON message and returns it as a string.
-    /// No parsing or validation is performed - that's the responsibility
-    /// of the caller (typically the server layer).
-    async fn receive_message(&mut self) -> Result<String, Error> {
-        let mut line = String::new();
-        let bytes_read = self.reader.read_line(&mut line).await?;
-        if bytes_read == 0 {
-            return Err(Error::TransportError(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "End of input",
-            )));
-        }
+    /// This method runs in a loop, reading newline-delimited JSON from stdin,
+    /// processing each message through the method registry, and writing
+    /// newline-terminated JSON responses to stdout.
+    ///
+    /// The server runs until stdin is closed or an error occurs.
+    ///
+    /// # Arguments
+    ///
+    /// * `methods` - The method registry containing all registered JSON-RPC methods
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when stdin is closed, or an error if a fatal error occurs.
+    async fn serve(self, methods: Methods) -> Result<(), Error> {
+        let mut reader = BufReader::new(tokio::io::stdin());
+        let mut writer = BufWriter::new(tokio::io::stdout());
 
-        if line.ends_with('\n') {
-            line.pop();
-            if line.ends_with('\r') {
+        loop {
+            // Read a line from stdin
+            let mut line = String::new();
+            let bytes_read = reader.read_line(&mut line).await?;
+            if bytes_read == 0 {
+                // stdin closed
+                break;
+            }
+
+            // Remove trailing newline characters
+            if line.ends_with('\n') {
                 line.pop();
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+            }
+
+            // Process the message through the method registry
+            if let Some(response) = methods.process_message(&line).await {
+                // Send the response to stdout
+                writer.write_all(response.as_bytes()).await?;
+                writer.write_all(b"\n").await?;
+                writer.flush().await?;
             }
         }
-        Ok(line)
-    }
 
-    /// Send a raw JSON string to stdout.
-    ///
-    /// Writes the JSON string as-is to stdout with a newline.
-    /// The caller is responsible for serializing JSON-RPC messages
-    /// to JSON strings before calling this method.
-    async fn send_message(&mut self, json: &str) -> Result<(), Error> {
-        self.writer.write_all(json.as_bytes()).await?;
-        self.writer.write_all(b"\n").await?;
-        self.writer.flush().await?;
         Ok(())
     }
 }

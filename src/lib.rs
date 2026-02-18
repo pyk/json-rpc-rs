@@ -126,7 +126,7 @@
 
 pub use error::Error;
 pub use methods::Methods;
-pub use transports::{InMemory, Stdio, Transport};
+pub use transports::{Http, InMemory, Stdio, Transport};
 pub use types::{Message, Notification, Request, RequestId, Response};
 
 /// Serve a JSON-RPC server with the given transport and methods.
@@ -135,8 +135,8 @@ pub use types::{Message, Notification, Request, RequestId, Response};
 /// using the specified transport. The transport determines how JSON-RPC
 /// messages are sent and received (e.g., stdio, TCP, in-memory).
 ///
-/// JSON-RPC is transport-agnostic - the protocol works with any transport
-/// that can send and receive raw JSON strings.
+/// Each transport implementation handles its own serving logic, allowing
+/// for different communication patterns (continuous stream, request/response, etc.).
 ///
 /// # Limitations
 ///
@@ -146,7 +146,7 @@ pub use types::{Message, Notification, Request, RequestId, Response};
 ///
 /// # Arguments
 ///
-/// * `transport` - The transport to use for communication (stdio, TCP, etc.)
+/// * `transport` - The transport to use for communication (stdio, HTTP, in-memory, etc.)
 /// * `methods` - The method registry containing all registered JSON-RPC methods
 ///
 /// # Returns
@@ -172,108 +172,9 @@ pub use types::{Message, Notification, Request, RequestId, Response};
 /// ```
 pub async fn serve<T>(transport: T, methods: Methods) -> Result<(), Error>
 where
-    T: Transport + 'static,
+    T: Transport,
 {
-    let mut transport = transport;
-    let methods = std::sync::Arc::new(methods);
-
-    loop {
-        let json_str = match transport.receive_message().await {
-            Ok(msg) => msg,
-            Err(Error::TransportError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                break;
-            }
-            Err(_e) => {
-                let error = crate::types::Error::internal_error("Internal error");
-                let response = Response::error(RequestId::Null, error);
-                let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json).await;
-                continue;
-            }
-        };
-
-        let value: serde_json::Value = match serde_json::from_str(&json_str) {
-            Ok(v) => v,
-            Err(_e) => {
-                let error = crate::types::Error::parse_error("Parse error");
-                let response = Response::error(RequestId::Null, error);
-                let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json).await;
-                continue;
-            }
-        };
-
-        let request_id = value.get("id").and_then(|id_value| match id_value {
-            serde_json::Value::Null => Some(RequestId::Null),
-            serde_json::Value::Number(n) => n.as_u64().map(RequestId::Number),
-            serde_json::Value::String(s) => Some(RequestId::String(s.clone())),
-            _ => None,
-        });
-
-        let message = match Message::from_json(value) {
-            Ok(msg) => msg,
-            Err(Error::InvalidRequest(_e)) => {
-                let error = crate::types::Error::invalid_request("Invalid Request");
-                let id_to_use = request_id.unwrap_or(RequestId::Null);
-                let response = Response::error(id_to_use, error);
-                let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json).await;
-                continue;
-            }
-            Err(_e) => {
-                let error = crate::types::Error::internal_error("Internal error");
-                let response = Response::error(request_id.unwrap_or(RequestId::Null), error);
-                let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json).await;
-                continue;
-            }
-        };
-
-        match message {
-            Message::Request(request) => {
-                let method_name = &request.method;
-                let params = request.params.unwrap_or(serde_json::Value::Null);
-                let response = if let Some(handler) = methods.get_handler(method_name) {
-                    let result = handler(params).await;
-                    match result {
-                        Ok(result_value) => Response::success(request.id.clone(), result_value),
-                        Err(e) => {
-                            let error = match e {
-                                crate::error::Error::RpcError { code, message } => {
-                                    crate::types::Error::new(code, message, None)
-                                }
-                                _ => crate::types::Error::new(-32603, e.to_string(), None),
-                            };
-                            Response::error(request.id.clone(), error)
-                        }
-                    }
-                } else {
-                    let error = crate::types::Error::method_not_found(format!(
-                        "Unknown method: {}",
-                        method_name
-                    ));
-                    Response::error(request.id.clone(), error)
-                };
-                let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json).await;
-            }
-            Message::Notification(notification) => {
-                if let Some(handler) = methods.get_handler(&notification.method) {
-                    let params = notification.params.unwrap_or(serde_json::Value::Null);
-                    let _ = handler(params).await;
-                }
-            }
-            Message::Batch(_messages) => {
-                let error = crate::types::Error::internal_error("Batch requests not yet supported");
-                let response = Response::error(request_id.unwrap_or(RequestId::Null), error);
-                let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json).await;
-            }
-            Message::Response(_response) => {}
-        }
-    }
-
-    Ok(())
+    transport.serve(methods).await
 }
 
 pub mod error;

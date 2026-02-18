@@ -6,6 +6,7 @@
 
 use tokio::sync::mpsc;
 
+use crate::Methods;
 use crate::error::Error;
 use crate::transports::Transport;
 
@@ -22,11 +23,27 @@ use crate::transports::Transport;
 ///
 /// ```no_run
 /// use json_rpc::transports::in_memory::InMemory;
+/// use json_rpc::Methods;
+/// use serde_json::Value;
+///
+/// async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
+///     Ok(params)
+/// }
+///
+/// let methods = Methods::new().add("echo", echo);
 ///
 /// // Create a pair of connected transports
 /// let (transport_a, transport_b) = InMemory::pair();
 ///
-/// // transport_a and transport_b can now communicate with each other
+/// // Start the server on one transport
+/// tokio::spawn(async move {
+///     transport_a.serve(methods).await.unwrap();
+/// });
+///
+/// // Send requests from the other transport
+/// let request = r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#;
+/// let response = transport_b.send_and_receive(request).await.unwrap();
+/// println!("{}", response);
 /// ```
 pub struct InMemory {
     receiver: mpsc::Receiver<String>,
@@ -75,6 +92,29 @@ impl InMemory {
     ///
     /// Note that if you try to receive from this transport, it will wait indefinitely
     /// until a message is sent via the returned sender.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use json_rpc::transports::in_memory::InMemory;
+    /// use json_rpc::Methods;
+    /// use serde_json::Value;
+    ///
+    /// async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
+    ///     Ok(params)
+    /// }
+    ///
+    /// let methods = Methods::new().add("echo", echo);
+    /// let (transport, sender) = InMemory::unconnected();
+    ///
+    /// // Start the server
+    /// tokio::spawn(async move {
+    ///     transport.serve(methods).await.unwrap();
+    /// });
+    ///
+    /// // Send requests
+    /// sender.send(r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#.to_string()).await.unwrap();
+    /// ```
     pub fn unconnected() -> (Self, mpsc::Sender<String>) {
         let (sender, receiver) = mpsc::channel(128);
         let transport = Self::new(receiver, sender.clone());
@@ -96,34 +136,73 @@ impl InMemory {
     pub fn receiver(&self) -> &mpsc::Receiver<String> {
         &self.receiver
     }
-}
 
-impl Transport for InMemory {
-    /// Receive a raw JSON string from the in-memory channel.
+    /// Send a JSON-RPC request and wait for a response.
     ///
-    /// This method is async and will wait until a message is available on the receiver channel.
-    /// No parsing or validation is performed - that's the responsibility
-    /// of the caller (typically the server layer).
-    async fn receive_message(&mut self) -> Result<String, Error> {
+    /// This helper method is useful for testing when you want to send a request
+    /// and wait for the response in a single call.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The JSON-RPC request as a string
+    ///
+    /// # Returns
+    ///
+    /// Returns the JSON-RPC response as a string, or an error if the channel is closed.
+    pub async fn send_and_receive(&mut self, request: &str) -> Result<String, Error> {
+        self.sender.send(request.to_string()).await.map_err(|_| {
+            Error::TransportError(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "Receiver disconnected",
+            ))
+        })?;
+
         self.receiver.recv().await.ok_or_else(|| {
             Error::TransportError(std::io::Error::new(
                 std::io::ErrorKind::ConnectionReset,
-                "Channel sender disconnected",
+                "Sender disconnected",
             ))
         })
     }
+}
 
-    /// Send a raw JSON string through the in-memory channel.
+impl Transport for InMemory {
+    /// Serve the JSON-RPC server using in-memory transport.
     ///
-    /// Sends the JSON string as-is without additional serialization.
-    /// The caller is responsible for serializing JSON-RPC messages
-    /// to JSON strings before calling this method.
-    async fn send_message(&mut self, json: &str) -> Result<(), Error> {
-        self.sender.send(json.to_string()).await.map_err(|_| {
-            Error::TransportError(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "Channel receiver disconnected",
-            ))
-        })
+    /// This method runs in a loop, receiving messages from the in-memory channel,
+    /// processing each message through the method registry, and sending
+    /// responses back through the response channel.
+    ///
+    /// The server runs until the sender is disconnected.
+    ///
+    /// # Arguments
+    ///
+    /// * `methods` - The method registry containing all registered JSON-RPC methods
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when the sender is disconnected, or an error if a fatal error occurs.
+    async fn serve(mut self, methods: Methods) -> Result<(), Error> {
+        loop {
+            // Receive a message from the channel
+            let request = match self.receiver.recv().await {
+                Some(msg) => msg,
+                None => {
+                    // Sender disconnected
+                    break;
+                }
+            };
+
+            // Process the message through the method registry
+            if let Some(response) = methods.process_message(&request).await {
+                // Send the response back through the channel
+                if let Err(_) = self.sender.send(response).await {
+                    // Receiver disconnected
+                    break;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
