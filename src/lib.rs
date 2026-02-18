@@ -61,8 +61,9 @@
 //!
 //! let methods = Methods::new()
 //!     .add("echo", echo);
-//! let transport = Stdio::default();
-//! json_rpc::serve(transport, methods).await?;
+//!
+//! let transport = Stdio::new();
+//! json_rpc::serve(transport, methods).await.unwrap();
 //! # Ok::<(), json_rpc::Error>(())
 //! ```
 //!
@@ -86,7 +87,7 @@
 //!
 //! let methods = Methods::new()
 //!     .add("initialize", initialize);
-//! # json_rpc::serve(Stdio::default(), methods).await.unwrap();
+//! # json_rpc::serve(Stdio::new(), methods).await.unwrap();
 //! ```
 //!
 //! # Error Handling
@@ -107,7 +108,7 @@
 //!
 //! let methods = Methods::new()
 //!     .add("divide", divide);
-//! # json_rpc::serve(Stdio::default(), methods).await.unwrap();
+//! # json_rpc::serve(Stdio::new(), methods).await.unwrap();
 //! ```
 //!
 //! # Transports
@@ -166,7 +167,7 @@ pub use types::{Message, Notification, Request, RequestId, Response};
 /// let methods = Methods::new()
 ///     .add("echo", echo);
 ///
-/// let transport = Stdio::default();
+/// let transport = Stdio::new();
 /// json_rpc::serve(transport, methods).await.unwrap();
 /// ```
 pub async fn serve<T>(transport: T, methods: Methods) -> Result<(), Error>
@@ -177,7 +178,7 @@ where
     let methods = std::sync::Arc::new(methods);
 
     loop {
-        let json_str = match transport.receive_message() {
+        let json_str = match transport.receive_message().await {
             Ok(msg) => msg,
             Err(Error::TransportError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 break;
@@ -186,7 +187,7 @@ where
                 let error = crate::types::Error::internal_error("Internal error");
                 let response = Response::error(RequestId::Null, error);
                 let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json);
+                let _ = transport.send_message(&json).await;
                 continue;
             }
         };
@@ -197,7 +198,7 @@ where
                 let error = crate::types::Error::parse_error("Parse error");
                 let response = Response::error(RequestId::Null, error);
                 let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json);
+                let _ = transport.send_message(&json).await;
                 continue;
             }
         };
@@ -216,14 +217,14 @@ where
                 let id_to_use = request_id.unwrap_or(RequestId::Null);
                 let response = Response::error(id_to_use, error);
                 let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json);
+                let _ = transport.send_message(&json).await;
                 continue;
             }
             Err(_e) => {
                 let error = crate::types::Error::internal_error("Internal error");
                 let response = Response::error(request_id.unwrap_or(RequestId::Null), error);
                 let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json);
+                let _ = transport.send_message(&json).await;
                 continue;
             }
         };
@@ -254,7 +255,7 @@ where
                     Response::error(request.id.clone(), error)
                 };
                 let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json);
+                let _ = transport.send_message(&json).await;
             }
             Message::Notification(notification) => {
                 if let Some(handler) = methods.get_handler(&notification.method) {
@@ -266,7 +267,7 @@ where
                 let error = crate::types::Error::internal_error("Batch requests not yet supported");
                 let response = Response::error(request_id.unwrap_or(RequestId::Null), error);
                 let json = serde_json::to_string(&response).map_err(Error::from)?;
-                let _ = transport.send_message(&json);
+                let _ = transport.send_message(&json).await;
             }
             Message::Response(_response) => {}
         }

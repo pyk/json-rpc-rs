@@ -1,17 +1,17 @@
 //! In-memory transport for JSON-RPC 2.0.
 //!
 //! This module implements an in-memory transport for JSON-RPC 2.0 communication
-//! within the same process. It uses channels for message passing and is primarily
+//! within the same process. It uses async channels for message passing and is primarily
 //! useful for testing and in-process communication scenarios.
 
-use std::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc;
 
 use crate::error::Error;
 use crate::transports::Transport;
 
 /// In-memory transport for JSON-RPC messages.
 ///
-/// This transport uses channels for message passing, allowing JSON-RPC communication
+/// This transport uses async channels for message passing, allowing JSON-RPC communication
 /// between different parts of the same process. It is primarily useful for:
 ///
 /// - Testing JSON-RPC handlers without I/O
@@ -29,8 +29,8 @@ use crate::transports::Transport;
 /// // transport_a and transport_b can now communicate with each other
 /// ```
 pub struct InMemory {
-    receiver: Receiver<String>,
-    sender: Sender<String>,
+    receiver: mpsc::Receiver<String>,
+    sender: mpsc::Sender<String>,
 }
 
 impl InMemory {
@@ -38,7 +38,7 @@ impl InMemory {
     ///
     /// This is typically used by the `pair()` method, but can be used directly
     /// if you need to connect to existing channels.
-    pub fn new(receiver: Receiver<String>, sender: Sender<String>) -> Self {
+    pub fn new(receiver: mpsc::Receiver<String>, sender: mpsc::Sender<String>) -> Self {
         Self { receiver, sender }
     }
 
@@ -58,8 +58,8 @@ impl InMemory {
     /// // and messages sent from transport_b are received by transport_a
     /// ```
     pub fn pair() -> (Self, Self) {
-        let (sender_a, receiver_a) = mpsc::channel();
-        let (sender_b, receiver_b) = mpsc::channel();
+        let (sender_a, receiver_a) = mpsc::channel(128);
+        let (sender_b, receiver_b) = mpsc::channel(128);
 
         let transport_a = Self::new(receiver_b, sender_a);
         let transport_b = Self::new(receiver_a, sender_b);
@@ -73,10 +73,10 @@ impl InMemory {
     /// sender that can be used to send messages to it. This is primarily useful
     /// for scenarios where you want to manually control message sending to the transport.
     ///
-    /// Note that if you try to receive from this transport, it will block indefinitely
+    /// Note that if you try to receive from this transport, it will wait indefinitely
     /// until a message is sent via the returned sender.
-    pub fn unconnected() -> (Self, Sender<String>) {
-        let (sender, receiver) = mpsc::channel();
+    pub fn unconnected() -> (Self, mpsc::Sender<String>) {
+        let (sender, receiver) = mpsc::channel(128);
         let transport = Self::new(receiver, sender.clone());
         (transport, sender)
     }
@@ -85,7 +85,7 @@ impl InMemory {
     ///
     /// This can be used to clone the sender if you need multiple endpoints
     /// to send messages to this transport.
-    pub fn sender(&self) -> &Sender<String> {
+    pub fn sender(&self) -> &mpsc::Sender<String> {
         &self.sender
     }
 
@@ -93,7 +93,7 @@ impl InMemory {
     ///
     /// This can be used to clone the receiver if you need multiple endpoints
     /// to receive messages from this transport.
-    pub fn receiver(&self) -> &Receiver<String> {
+    pub fn receiver(&self) -> &mpsc::Receiver<String> {
         &self.receiver
     }
 }
@@ -101,11 +101,11 @@ impl InMemory {
 impl Transport for InMemory {
     /// Receive a raw JSON string from the in-memory channel.
     ///
-    /// This method blocks until a message is available on the receiver channel.
+    /// This method is async and will wait until a message is available on the receiver channel.
     /// No parsing or validation is performed - that's the responsibility
     /// of the caller (typically the server layer).
-    fn receive_message(&mut self) -> Result<String, Error> {
-        self.receiver.recv().map_err(|_| {
+    async fn receive_message(&mut self) -> Result<String, Error> {
+        self.receiver.recv().await.ok_or_else(|| {
             Error::TransportError(std::io::Error::new(
                 std::io::ErrorKind::ConnectionReset,
                 "Channel sender disconnected",
@@ -118,8 +118,8 @@ impl Transport for InMemory {
     /// Sends the JSON string as-is without additional serialization.
     /// The caller is responsible for serializing JSON-RPC messages
     /// to JSON strings before calling this method.
-    fn send_message(&mut self, json: &str) -> Result<(), Error> {
-        self.sender.send(json.to_string()).map_err(|_| {
+    async fn send_message(&mut self, json: &str) -> Result<(), Error> {
+        self.sender.send(json.to_string()).await.map_err(|_| {
             Error::TransportError(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 "Channel receiver disconnected",

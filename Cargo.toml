@@ -28,7 +28,7 @@ num_cpus = "1"
 tracing = "0.1"
 
 # Async runtime
-tokio = {version = "1", features = ["rt", "io-std"]}
+tokio = {version = "1", features = ["rt", "io-std", "io-util", "sync"]}
 
 [dev-dependencies]
 # Error handling for examples

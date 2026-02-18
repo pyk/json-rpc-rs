@@ -1,9 +1,9 @@
 //! Stdio-based transport for JSON-RPC 2.0.
 //!
 //! This module implements stdio-based NDJSON (newline-delimited JSON) transport
-//! for JSON-RPC 2.0 communication over stdin/stdout.
+//! for JSON-RPC 2.0 communication over stdin/stdout using tokio async I/O.
 
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 
 use crate::error::Error;
 use crate::transports::Transport;
@@ -11,10 +11,10 @@ use crate::transports::Transport;
 /// Stdio-based transport for JSON-RPC messages.
 ///
 /// This transport reads newline-delimited JSON from stdin and writes
-/// newline-terminated JSON to stdout. It uses buffered I/O for efficiency.
+/// newline-terminated JSON to stdout. It uses buffered async I/O for efficiency.
 pub struct Stdio {
-    reader: BufReader<std::io::Stdin>,
-    writer: BufWriter<std::io::Stdout>,
+    reader: BufReader<tokio::io::Stdin>,
+    writer: BufWriter<tokio::io::Stdout>,
 }
 
 impl Stdio {
@@ -23,19 +23,21 @@ impl Stdio {
     /// Uses stdin for reading and stdout for writing.
     pub fn new() -> Self {
         Self {
-            reader: BufReader::new(std::io::stdin()),
-            writer: BufWriter::new(std::io::stdout()),
+            reader: BufReader::new(tokio::io::stdin()),
+            writer: BufWriter::new(tokio::io::stdout()),
         }
     }
+}
 
-    /// Read a single newline-delimited JSON message from stdin.
+impl Transport for Stdio {
+    /// Receive a raw JSON string from stdin.
     ///
-    /// This method blocks until a complete line is received. It handles
-    /// partial reads by using buffered I/O.
-    ///
-    pub fn read_message(&mut self) -> Result<String, Error> {
+    /// Reads a newline-delimited JSON message and returns it as a string.
+    /// No parsing or validation is performed - that's the responsibility
+    /// of the caller (typically the server layer).
+    async fn receive_message(&mut self) -> Result<String, Error> {
         let mut line = String::new();
-        let bytes_read = self.reader.read_line(&mut line)?;
+        let bytes_read = self.reader.read_line(&mut line).await?;
         if bytes_read == 0 {
             return Err(Error::TransportError(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
@@ -52,40 +54,15 @@ impl Stdio {
         Ok(line)
     }
 
-    /// Write a JSON message to stdout with newline termination.
-    ///
-    /// This method writes the message followed by a newline character.
-    /// The output is buffered for efficiency.
-    ///
-    pub fn write_message(&mut self, message: &str) -> Result<(), Error> {
-        writeln!(self.writer, "{}", message)?;
-        self.writer.flush()?;
-        Ok(())
-    }
-}
-
-impl Transport for Stdio {
-    /// Receive a raw JSON string from stdin.
-    ///
-    /// Reads a newline-delimited JSON message and returns it as a string.
-    /// No parsing or validation is performed - that's the responsibility
-    /// of the caller (typically the server layer).
-    fn receive_message(&mut self) -> Result<String, Error> {
-        self.read_message()
-    }
-
     /// Send a raw JSON string to stdout.
     ///
     /// Writes the JSON string as-is to stdout with a newline.
     /// The caller is responsible for serializing JSON-RPC messages
     /// to JSON strings before calling this method.
-    fn send_message(&mut self, json: &str) -> Result<(), Error> {
-        self.write_message(json)
-    }
-}
-
-impl Default for Stdio {
-    fn default() -> Self {
-        Self::new()
+    async fn send_message(&mut self, json: &str) -> Result<(), Error> {
+        self.writer.write_all(json.as_bytes()).await?;
+        self.writer.write_all(b"\n").await?;
+        self.writer.flush().await?;
+        Ok(())
     }
 }

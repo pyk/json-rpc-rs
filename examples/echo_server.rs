@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
     let methods = Methods::new().add("echo", echo);
 
     // Create stdio transport
-    let transport = Stdio::default();
+    let transport = Stdio::new();
 
     info!("Echo server started. Send JSON-RPC messages via stdin.");
     info!("Example: {{\"jsonrpc\":\"2.0\",\"method\":\"echo\",\"params\":\"hello\",\"id\":1}}");

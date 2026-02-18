@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
         .add("internal_error", internal_error);
 
     // Create stdio transport
-    let transport = Stdio::default();
+    let transport = Stdio::new();
 
     info!("Basic server started. Send JSON-RPC messages via stdin.");
     info!("Available methods:");
