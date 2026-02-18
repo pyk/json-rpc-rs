@@ -27,6 +27,9 @@ num_cpus = "1"
 # Tracing
 tracing = "0.1"
 
+# Async runtime
+tokio = {version = "1", features = ["rt", "io-std"]}
+
 [dev-dependencies]
 # Error handling for examples
 anyhow = "1.0"
@@ -35,4 +38,4 @@ anyhow = "1.0"
 assert_cmd = "2.1.2"
 
 # Enable trace in integration tests
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-subscriber = {version = "0.3.22", features = ["env-filter"]}
