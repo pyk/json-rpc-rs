@@ -35,12 +35,12 @@ Create a simple JSON-RPC server with one method and run it using stdin/stdout:
 use json_rpc::{Methods, Stdio};
 use serde_json::Value;
 
+async fn add(params: (i32, i32)) -> Result<i32, json_rpc::Error> {
+    Ok(params.0 + params.1)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), json_rpc::Error> {
-    async fn add(params: (i32, i32)) -> Result<i32, json_rpc::Error> {
-        Ok(params.0 + params.1)
-    }
-
     let methods = Methods::new()
         .add("add", add);
 
@@ -232,14 +232,6 @@ tokio::spawn(async move {
 
 sender.send(r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#.to_string()).await?;
 ```
-
-## Limitations
-
-- This library requires the tokio async runtime
-- The default Stdio transport works with NDJSON (newline-delimited JSON) only
-- This library is designed for local JSON-RPC servers, not distributed systems
-- Custom transports require implementing the
-  [`Transport`](src/transports/transport.rs) trait
 
 ## JSON-RPC 2.0 Compliance
 

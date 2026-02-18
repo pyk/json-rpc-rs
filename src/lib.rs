@@ -33,7 +33,7 @@
 //!
 //! # Quick Start
 //!
-//! Create a method registry and serve:
+//! Define methods and serve:
 //!
 //! ```no_run
 //! use json_rpc::Methods;
@@ -121,10 +121,64 @@
 //!
 //! # Transports
 //!
-//! The library separates protocol handling from transport. The Stdio transport
-//! reads newline-delimited JSON from stdin and writes responses to stdout.
-//! The InMemory transport provides an in-memory channel for testing.
-//! Implement custom transports by implementing the Transport trait.
+//! The library separates protocol handling from transport. All transports implement the
+//! [`Transport`] trait, making them interchangeable. Choose the appropriate transport
+//! based on your use case.
+//!
+//! ## Stdio Transport
+//!
+//! The Stdio transport reads newline-delimited JSON from stdin and writes responses to stdout.
+//! This is useful for LSP (Language Server Protocol) implementations and command-line tools.
+//!
+//! ```no_run
+//! use json_rpc::{Methods, Stdio};
+//! use serde_json::Value;
+//!
+//! async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
+//!     Ok(params)
+//! }
+//!
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
+//! let methods = Methods::new()
+//!     .add("echo", echo);
+//!
+//! let transport = Stdio::new();
+//! json_rpc::serve(transport, methods).await.unwrap();
+//! # });
+//! ```
+//!
+//! ## HTTP Transport
+//!
+//! The HTTP transport serves JSON-RPC over HTTP POST using axum. It accepts requests at
+//! `/jsonrpc` and returns responses as JSON in the HTTP response body. This is ideal for
+//! web services and APIs.
+//!
+//! ```no_run
+//! use json_rpc::{Http, Methods};
+//! use serde_json::Value;
+//! use std::net::SocketAddr;
+//!
+//! async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
+//!     Ok(params)
+//! }
+//!
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
+//! let methods = Methods::new().add("echo", echo);
+//! let addr: SocketAddr = "127.0.0.1:3000".parse().unwrap();
+//! let transport = Http::new(addr);
+//! json_rpc::serve(transport, methods).await.unwrap();
+//! # });
+//! ```
+//!
+//! ## InMemory Transport
+//!
+//! The InMemory transport provides an in-memory channel for testing and development.
+//! It's useful for unit tests where you don't need actual I/O.
+//!
+//! ## Custom Transports
+//!
+//! Implement custom transports by implementing the [`Transport`] trait to support
+//! additional communication channels such as WebSockets, TCP sockets, or other protocols.
 
 pub use error::Error;
 pub use methods::Methods;
