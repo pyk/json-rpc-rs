@@ -39,3 +39,6 @@ assert_cmd = "2.1.2"
 
 # Enable trace in integration tests
 tracing-subscriber = {version = "0.3.22", features = ["env-filter"]}
+
+# Async runtime for examples and tests
+tokio = {version = "1", features = ["full"]}

@@ -185,7 +185,7 @@ impl Server {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<(), Error> {
+    pub async fn run(&mut self) -> Result<(), Error> {
         let mut transport = self
             .transport
             .take()

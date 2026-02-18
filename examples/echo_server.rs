@@ -20,7 +20,8 @@ use anyhow::Result;
 use json_rpc::Server;
 use tracing::info;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(std::io::stderr)
@@ -38,7 +39,7 @@ fn main() -> Result<()> {
     info!("Example: {{\"jsonrpc\":\"2.0\",\"method\":\"echo\",\"params\":\"hello\",\"id\":1}}");
 
     info!("Starting server run loop");
-    server.run()?;
+    server.run().await?;
     info!("Server run loop completed");
 
     Ok(())
