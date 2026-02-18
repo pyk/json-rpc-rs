@@ -126,7 +126,7 @@ A new research document must follow this structure:
 
 ## 1. Descriptive Header for Question 1
 
-**Answering**: Question 1 text?
+**Answering**: Question 1
 
 Content answering question 1...
 
@@ -138,7 +138,7 @@ More detailed content...
 
 ## 2. Descriptive Header for Question 2
 
-**Answering**: Question 2 text?
+**Answering**: Question 2
 
 Content answering question 2...
 ```
@@ -151,7 +151,8 @@ Content answering question 2...
 3. **Answered Questions Section**: `## Answered Questions` followed by a
    numbered list of all questions being answered in the document
 4. **Question Sections**: Numbered sections (`## 1.`, `## 2.`, etc.) with clean
-   headers and `**Answering**: ` references to the questions
+   headers and `**Answering**: Question N` references (where N is the question
+   number from the Answered Questions list)
 5. **Subsections**: Organize content using `###` level headers as needed
 6. **Section Separators**: Use `---` (three hyphens) between major numbered
    sections
@@ -245,7 +246,7 @@ Example of adding a new question:
 
 ## 3. New Descriptive Header
 
-**Answering**: New question text?
+**Answering**: Question 3
 
 Content answering the new question...
 ```
@@ -305,7 +306,8 @@ Before finalizing any research documentation:
 - [ ] All sources are listed in the Sources section
 - [ ] Answered Questions section exists with numbered list of all questions
 - [ ] Each question has its own numbered section
-- [ ] Each question section has `**Answering**: ` reference to the question
+- [ ] Each question section has `**Answering**: Question N` reference (where N
+      is the question number)
 - [ ] Headers are descriptive and concise (not full questions)
 - [ ] Content answers questions directly without extra fluff
 - [ ] All information is sourced from the listed sources
