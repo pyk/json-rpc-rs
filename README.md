@@ -23,7 +23,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-json-rpc-rs = "0.1"
+json-rpc-rs = "0.2"
 tokio = { version = "1", features = ["full"] }
 ```
 
