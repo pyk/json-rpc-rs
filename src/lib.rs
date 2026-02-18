@@ -74,7 +74,7 @@
 //! Methods can use struct parameters for more complex APIs:
 //!
 //! ```no_run
-//! use json_rpc::{{Methods, Stdio}, Stdio};
+//! use json_rpc::{Methods, Stdio};
 //! use serde::Deserialize;
 //!
 //! # tokio::runtime::Runtime::new().unwrap().block_on(async {
@@ -151,16 +151,6 @@ pub use types::{Message, Notification, Request, RequestId, Response};
 /// Batch requests are not yet supported. Sending a batch request will return
 /// an internal error (-32603) with the message "Batch requests not yet supported".
 /// Batch support will be added in a future version.
-///
-/// # Arguments
-///
-/// * `transport` - The transport to use for communication (stdio, HTTP, in-memory, etc.)
-/// * `methods` - The method registry containing all registered JSON-RPC methods
-///
-/// # Returns
-///
-/// Returns `Ok(())` when the server shuts down gracefully, or an error if
-/// the server encounters a fatal error.
 ///
 /// # Example
 ///

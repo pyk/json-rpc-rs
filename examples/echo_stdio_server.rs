@@ -34,10 +34,8 @@ async fn main() -> Result<()> {
 
     info!("Initializing echo server");
 
-    // Build our application with methods
     let methods = Methods::new().add("echo", echo);
 
-    // Create stdio transport
     let transport = Stdio::new();
 
     info!("Echo server started. Send JSON-RPC messages via stdin.");

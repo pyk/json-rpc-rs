@@ -8,10 +8,12 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
+use std::sync::Arc;
+
 use serde::Serialize;
 
 use crate::error::Error;
-use std::sync::Arc;
+use crate::types::{Message, RequestId, Response};
 
 /// Type alias for async handler functions.
 type BoxedHandler = Box<
@@ -59,13 +61,6 @@ impl Methods {
     ///
     /// The handler must be an async function that takes deserialized parameters
     /// and returns a `Result` with either the return value or an `Error`.
-    ///
-    /// # Type Parameters
-    ///
-    /// - `F`: The handler function type
-    /// - `P`: The parameter type (must implement `DeserializeOwned`)
-    /// - `R`: The return type (must implement `Serialize`)
-    /// - `Fut`: The future type returned by the handler
     ///
     /// # Example
     ///
@@ -115,18 +110,7 @@ impl Methods {
     /// - Message type detection (request, notification, batch, response)
     /// - Method routing and execution
     /// - Error handling and response generation
-    ///
-    /// # Arguments
-    ///
-    /// * `json_str` - The raw JSON string from the transport
-    ///
-    /// # Returns
-    ///
-    /// Returns `Some(response_json)` if a response should be sent (for requests),
-    /// or `None` if no response is needed (for notifications).
     pub async fn process_message(&self, json_str: &str) -> Option<String> {
-        use crate::types::{Message, RequestId, Response};
-
         let value: serde_json::Value = match serde_json::from_str(json_str) {
             Ok(v) => v,
             Err(_) => {
@@ -230,19 +214,15 @@ impl Methods {
                             responses.push(response);
                         }
                         Message::Notification(notification) => {
-                            // Notifications don't get responses, but we still process them
                             if let Some(handler) = self.get_handler(&notification.method) {
                                 let params = notification.params.unwrap_or(serde_json::Value::Null);
                                 let _ = handler(params).await;
                             }
-                            // Don't add to responses
                         }
                         Message::Response(response) => {
-                            // This is a response for an invalid batch item, include it as-is
                             responses.push(response);
                         }
                         Message::Batch(_) => {
-                            // Nested batches are not allowed per JSON-RPC spec
                             let error_response = Response::error(
                                 crate::types::RequestId::Null,
                                 crate::types::Error::invalid_request("Invalid Request"),
@@ -252,7 +232,6 @@ impl Methods {
                     }
                 }
 
-                // Return array of responses as JSON
                 serde_json::to_string(&responses).ok()
             }
             Message::Response(_response) => None,

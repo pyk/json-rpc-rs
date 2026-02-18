@@ -4,6 +4,8 @@
 //! using axum for the web server. It supports the standard JSON-RPC POST pattern
 //! where requests are sent via HTTP POST and responses are returned in the HTTP response.
 
+use std::sync::Arc;
+
 use axum::{
     Router,
     extract::{Request as AxumRequest, State},
@@ -11,7 +13,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
-use std::sync::Arc;
 
 use crate::error::Error;
 use crate::methods::Methods;
@@ -82,7 +83,6 @@ impl Http {
     /// let transport = Http::new();
     /// ```
     pub fn new() -> Self {
-        // Unwrap is safe here because localhost:3000 is always a valid address
         Self::with_address((std::net::Ipv4Addr::LOCALHOST, DEFAULT_PORT))
             .expect("Failed to resolve default address")
     }
@@ -91,23 +91,12 @@ impl Http {
     ///
     /// The server will accept POST requests at `/jsonrpc` on the specified address.
     ///
-    /// # Arguments
-    ///
-    /// * `addr` - The address to bind the HTTP server to
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the address cannot be resolved.
-    ///
-    /// # Example
-    ///
     /// ```no_run
     /// use json_rpc::Http;
     ///
     /// let transport = Http::with_address(("127.0.0.1", 8080)).unwrap();
     /// ```
     pub fn with_address(addr: impl std::net::ToSocketAddrs) -> Result<Self, Error> {
-        // Resolve the address to a SocketAddr
         let mut addrs_iter = addr
             .to_socket_addrs()
             .map_err(|e| Error::protocol(format!("Failed to resolve address: {}", e)))?;
@@ -133,27 +122,15 @@ impl Transport for Http {
     /// the response is returned in the HTTP response.
     ///
     /// The server runs until it is shut down (e.g., by Ctrl+C).
-    ///
-    /// # Arguments
-    ///
-    /// * `methods` - The method registry containing all registered JSON-RPC methods
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` when the server shuts down gracefully, or an error if
-    /// the server fails to start.
     async fn serve(self, methods: Methods) -> Result<(), Error> {
-        // Create shared state with the methods registry
         let state = HttpState {
             methods: Arc::new(methods),
         };
 
-        // Build the axum router
         let app = Router::new()
             .route(DEFAULT_PATH, post(handle_jsonrpc))
             .with_state(state);
 
-        // Start the HTTP server
         let listener = tokio::net::TcpListener::bind(self.address)
             .await
             .map_err(|e| {
@@ -163,19 +140,13 @@ impl Transport for Http {
                 ))
             })?;
 
-        let local_addr = listener
-            .local_addr()
-            .map_err(|e| Error::TransportError(e))?;
+        let local_addr = listener.local_addr().map_err(Error::TransportError)?;
 
         eprintln!("HTTP transport listening on http://{}", local_addr);
         eprintln!("JSON-RPC endpoint: http://{}{}", local_addr, DEFAULT_PATH);
 
-        // Run the server
         axum::serve(listener, app).await.map_err(|e| {
-            Error::TransportError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("HTTP server error: {}", e),
-            ))
+            Error::TransportError(std::io::Error::other(format!("HTTP server error: {}", e)))
         })?;
 
         Ok(())
@@ -187,7 +158,6 @@ impl Transport for Http {
 /// This Axum handler extracts the JSON from the request body, processes it
 /// through the method registry, and returns the JSON-RPC response.
 async fn handle_jsonrpc(State(state): State<HttpState>, request: AxumRequest) -> Response {
-    // Read the request body
     let bytes = match axum::body::to_bytes(request.into_body(), 10 * 1024 * 1024).await {
         Ok(b) => b,
         Err(e) => {
@@ -206,7 +176,6 @@ async fn handle_jsonrpc(State(state): State<HttpState>, request: AxumRequest) ->
         }
     };
 
-    // Process the JSON-RPC message through the method registry
     let response_json = state.methods.process_message(&json_str).await;
 
     match response_json {
@@ -216,9 +185,6 @@ async fn handle_jsonrpc(State(state): State<HttpState>, request: AxumRequest) ->
             json,
         )
             .into_response(),
-        None => {
-            // This was a notification (no response expected)
-            StatusCode::OK.into_response()
-        }
+        None => StatusCode::OK.into_response(),
     }
 }

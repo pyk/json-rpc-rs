@@ -59,12 +59,10 @@ async fn main() -> Result<()> {
 
     info!("Initializing basic server for error handling tests");
 
-    // Build our application with methods
     let methods = Methods::new()
         .add("hello", hello)
         .add("internal_error", internal_error);
 
-    // Create stdio transport
     let transport = Stdio::new();
 
     info!("Basic server started. Send JSON-RPC messages via stdin.");

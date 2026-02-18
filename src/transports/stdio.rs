@@ -46,28 +46,17 @@ impl Transport for Stdio {
     /// newline-terminated JSON responses to stdout.
     ///
     /// The server runs until stdin is closed or an error occurs.
-    ///
-    /// # Arguments
-    ///
-    /// * `methods` - The method registry containing all registered JSON-RPC methods
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` when stdin is closed, or an error if a fatal error occurs.
     async fn serve(self, methods: Methods) -> Result<(), Error> {
         let mut reader = BufReader::new(tokio::io::stdin());
         let mut writer = BufWriter::new(tokio::io::stdout());
 
         loop {
-            // Read a line from stdin
             let mut line = String::new();
             let bytes_read = reader.read_line(&mut line).await?;
             if bytes_read == 0 {
-                // stdin closed
                 break;
             }
 
-            // Remove trailing newline characters
             if line.ends_with('\n') {
                 line.pop();
                 if line.ends_with('\r') {
@@ -75,9 +64,7 @@ impl Transport for Stdio {
                 }
             }
 
-            // Process the message through the method registry
             if let Some(response) = methods.process_message(&line).await {
-                // Send the response to stdout
                 writer.write_all(response.as_bytes()).await?;
                 writer.write_all(b"\n").await?;
                 writer.flush().await?;

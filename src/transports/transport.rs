@@ -47,21 +47,6 @@ pub trait Transport {
     /// 2. Parsing and validating JSON-RPC messages
     /// 3. Routing requests to the appropriate method handlers
     /// 4. Sending responses back through the same communication channel
-    ///
-    /// # Arguments
-    ///
-    /// * `methods` - The method registry containing all registered JSON-RPC methods
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` when the server shuts down gracefully, or an error if
-    /// the server encounters a fatal error.
-    ///
-    /// # Note
-    ///
-    /// This method takes `self` by value, which means the transport is consumed
-    /// when serving starts. This allows the transport to manage its resources
-    /// (like file handles, sockets, etc.) as needed.
     fn serve(self, methods: Methods)
     -> impl std::future::Future<Output = Result<(), Error>> + Send;
 }

@@ -34,7 +34,7 @@ use crate::transports::Transport;
 /// let methods = Methods::new().add("echo", echo);
 ///
 /// // Create a pair of connected transports
-/// let (transport_a, transport_b) = InMemory::pair();
+/// let (transport_a, mut transport_b) = InMemory::pair();
 ///
 /// // Start the server on one transport
 /// tokio::spawn(async move {
@@ -145,14 +145,6 @@ impl InMemory {
     ///
     /// This helper method is useful for testing when you want to send a request
     /// and wait for the response in a single call.
-    ///
-    /// # Arguments
-    ///
-    /// * `request` - The JSON-RPC request as a string
-    ///
-    /// # Returns
-    ///
-    /// Returns the JSON-RPC response as a string, or an error if the channel is closed.
     pub async fn send_and_receive(&mut self, request: &str) -> Result<String, Error> {
         self.sender.send(request.to_string()).await.map_err(|_| {
             Error::TransportError(std::io::Error::new(
@@ -178,32 +170,17 @@ impl Transport for InMemory {
     /// responses back through the response channel.
     ///
     /// The server runs until the sender is disconnected.
-    ///
-    /// # Arguments
-    ///
-    /// * `methods` - The method registry containing all registered JSON-RPC methods
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` when the sender is disconnected, or an error if a fatal error occurs.
     async fn serve(mut self, methods: Methods) -> Result<(), Error> {
         loop {
-            // Receive a message from the channel
             let request = match self.receiver.recv().await {
                 Some(msg) => msg,
-                None => {
-                    // Sender disconnected
-                    break;
-                }
+                None => break,
             };
 
-            // Process the message through the method registry
-            if let Some(response) = methods.process_message(&request).await {
-                // Send the response back through the channel
-                if let Err(_) = self.sender.send(response).await {
-                    // Receiver disconnected
-                    break;
-                }
+            if let Some(response) = methods.process_message(&request).await
+                && (self.sender.send(response).await).is_err()
+            {
+                break;
             }
         }
 

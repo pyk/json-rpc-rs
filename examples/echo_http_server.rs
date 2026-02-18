@@ -42,10 +42,8 @@ async fn main() -> Result<()> {
 
     info!("Initializing HTTP echo server");
 
-    // Build our application with methods
     let methods = Methods::new().add("echo", echo);
 
-    // Create HTTP transport
     let transport = Http::new();
 
     info!("Echo server started on http://localhost:3000");
