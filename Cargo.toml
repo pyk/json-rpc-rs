@@ -46,3 +46,6 @@ tracing-subscriber = {version = "0.3.22", features = ["env-filter"]}
 
 # Async runtime for examples and tests
 tokio = {version = "1", features = ["full"]}
+
+# HTTP client for testing
+reqwest = {version = "0.13", features = ["json"]}
