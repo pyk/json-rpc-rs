@@ -37,9 +37,11 @@ type BoxedHandler = Box<
 ///     Ok(params)
 /// }
 ///
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
 /// let methods = Methods::new()
 ///     .add("echo", echo);
-/// # json_rpc::serve(methods).await.unwrap();
+/// # json_rpc::serve(json_rpc::Stdio::new(), methods).await.unwrap();
+/// # });
 /// ```
 pub struct Methods {
     handlers: HashMap<String, BoxedHandler>,

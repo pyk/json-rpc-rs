@@ -31,9 +31,11 @@ use crate::methods::Methods;
 ///     Ok(params)
 /// }
 ///
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
 /// let methods = Methods::new().add("echo", echo);
 /// let transport = Stdio::new();
 /// transport.serve(methods).await.unwrap();
+/// # });
 /// ```
 pub trait Transport {
     /// Serve the JSON-RPC server with the given methods.

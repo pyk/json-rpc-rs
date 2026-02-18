@@ -58,9 +58,11 @@ struct HttpState {
 ///     Ok(params)
 /// }
 ///
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
 /// let methods = Methods::new().add("echo", echo);
 /// let transport = Http::new();
 /// json_rpc::serve(transport, methods).await.unwrap();
+/// # });
 /// ```
 pub struct Http {
     /// The address to bind the HTTP server to.
@@ -102,7 +104,7 @@ impl Http {
     /// ```no_run
     /// use json_rpc::Http;
     ///
-    /// let transport = Http::with_address(([127, 0, 0, 1], 8080)).unwrap();
+    /// let transport = Http::with_address(("127.0.0.1", 8080)).unwrap();
     /// ```
     pub fn with_address(addr: impl std::net::ToSocketAddrs) -> Result<Self, Error> {
         // Resolve the address to a SocketAddr

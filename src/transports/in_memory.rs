@@ -23,13 +23,14 @@ use crate::transports::Transport;
 ///
 /// ```no_run
 /// use json_rpc::transports::in_memory::InMemory;
-/// use json_rpc::Methods;
+/// use json_rpc::{Methods, Transport};
 /// use serde_json::Value;
 ///
 /// async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
 ///     Ok(params)
 /// }
 ///
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
 /// let methods = Methods::new().add("echo", echo);
 ///
 /// // Create a pair of connected transports
@@ -44,6 +45,7 @@ use crate::transports::Transport;
 /// let request = r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#;
 /// let response = transport_b.send_and_receive(request).await.unwrap();
 /// println!("{}", response);
+/// # });
 /// ```
 pub struct InMemory {
     receiver: mpsc::Receiver<String>,
@@ -97,13 +99,14 @@ impl InMemory {
     ///
     /// ```no_run
     /// use json_rpc::transports::in_memory::InMemory;
-    /// use json_rpc::Methods;
+    /// use json_rpc::{Methods, Transport};
     /// use serde_json::Value;
     ///
     /// async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
     ///     Ok(params)
     /// }
     ///
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
     /// let methods = Methods::new().add("echo", echo);
     /// let (transport, sender) = InMemory::unconnected();
     ///
@@ -114,6 +117,7 @@ impl InMemory {
     ///
     /// // Send requests
     /// sender.send(r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#.to_string()).await.unwrap();
+    /// # });
     /// ```
     pub fn unconnected() -> (Self, mpsc::Sender<String>) {
         let (sender, receiver) = mpsc::channel(128);

@@ -59,12 +59,14 @@
 //!     Ok(params)
 //! }
 //!
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
 //! let methods = Methods::new()
 //!     .add("echo", echo);
 //!
 //! let transport = Stdio::new();
 //! json_rpc::serve(transport, methods).await.unwrap();
 //! # Ok::<(), json_rpc::Error>(())
+//! # });
 //! ```
 //!
 //! # Struct Parameters
@@ -72,9 +74,10 @@
 //! Methods can use struct parameters for more complex APIs:
 //!
 //! ```no_run
-//! use json_rpc::Methods;
+//! use json_rpc::{{Methods, Stdio}, Stdio};
 //! use serde::Deserialize;
 //!
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
 //! #[derive(Deserialize)]
 //! struct InitializeParams {
 //!     name: String,
@@ -85,9 +88,12 @@
 //!     Ok(format!("Server {} v{} initialized", params.name, params.version))
 //! }
 //!
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
 //! let methods = Methods::new()
 //!     .add("initialize", initialize);
 //! # json_rpc::serve(Stdio::new(), methods).await.unwrap();
+//! # });
+//! # });
 //! ```
 //!
 //! # Error Handling
@@ -96,7 +102,7 @@
 //! specific codes:
 //!
 //! ```no_run
-//! use json_rpc::{Methods, Error};
+//! use json_rpc::{Methods, Error, Stdio};
 //! use serde_json::Value;
 //!
 //! async fn divide(params: (i32, i32)) -> Result<i32, Error> {
@@ -106,9 +112,11 @@
 //!     Ok(params.0 / params.1)
 //! }
 //!
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
 //! let methods = Methods::new()
 //!     .add("divide", divide);
 //! # json_rpc::serve(Stdio::new(), methods).await.unwrap();
+//! # });
 //! ```
 //!
 //! # Transports
@@ -164,11 +172,13 @@ pub use types::{Message, Notification, Request, RequestId, Response};
 ///     Ok(params)
 /// }
 ///
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
 /// let methods = Methods::new()
 ///     .add("echo", echo);
 ///
 /// let transport = Stdio::new();
 /// json_rpc::serve(transport, methods).await.unwrap();
+/// # });
 /// ```
 pub async fn serve<T>(transport: T, methods: Methods) -> Result<(), Error>
 where
