@@ -42,8 +42,8 @@ rust-lint
 
 # Instructions
 
+- [Research Instruction](.agents/instructions/research.md)
 - [Create Plan Instruction](.agents/instructions/create-plan.md)
-- [Review Changes Instruction](.agents/instructions/review-changes.md)
 - [Create Git Commit Message Instruction](.agents/instructions/create-git-commit-message.md)
 
 # Agent Modes
@@ -90,3 +90,20 @@ When writing Git Commit message:
 2. Use the guidelines.
 3. Use the thinking tool.
 4. Read & follow **Create Git Commit Message Instruction**.
+
+## Research Mode
+
+When creating or updating research documentation:
+
+1. Read **Research Instruction** to understand the format and structure.
+2. Read all sources to get complete context.
+3. Create or update the file in `.agents/research/` directory using
+   dash-separated lowercase filename format (e.g., `tokio-json-rpc.md`).
+4. Follow the document format structure:
+    - Title with descriptive topic name
+    - Sources section with all source links
+    - Answered Questions section with numbered list of all questions
+    - Numbered sections for each question with descriptive headers
+    - `**Answering**: ` references at the top of each question section
+5. Include section separators (`---`) between major sections.
+6. Review to ensure no extra content is included.
