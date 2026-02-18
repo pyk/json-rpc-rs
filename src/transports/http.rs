@@ -54,6 +54,7 @@ struct HttpState {
 /// ```no_run
 /// use json_rpc::{Http, Methods};
 /// use serde_json::Value;
+/// use std::net::SocketAddr;
 ///
 /// async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
 ///     Ok(params)
@@ -61,7 +62,8 @@ struct HttpState {
 ///
 /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
 /// let methods = Methods::new().add("echo", echo);
-/// let transport = Http::new();
+/// let addr: SocketAddr = "127.0.0.1:3000".parse().unwrap();
+/// let transport = Http::new(addr);
 /// json_rpc::serve(transport, methods).await.unwrap();
 /// # });
 /// ```
@@ -71,46 +73,26 @@ pub struct Http {
 }
 
 impl Http {
-    /// Create a new HTTP transport with default settings.
+    /// Create a new HTTP transport with the specified bind address.
     ///
-    /// The server will bind to `127.0.0.1:3000` and accept POST requests at `/jsonrpc`.
+    /// The server will accept POST requests at `/jsonrpc` on the specified address.
     ///
     /// # Example
     ///
     /// ```no_run
     /// use json_rpc::Http;
+    /// use std::net::SocketAddr;
     ///
-    /// let transport = Http::new();
+    /// // Default address
+    /// let addr: SocketAddr = "127.0.0.1:3000".parse().unwrap();
+    /// let transport = Http::new(addr);
+    ///
+    /// // Custom address
+    /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+    /// let transport = Http::new(addr);
     /// ```
-    pub fn new() -> Self {
-        Self::with_address((std::net::Ipv4Addr::LOCALHOST, DEFAULT_PORT))
-            .expect("Failed to resolve default address")
-    }
-
-    /// Create a new HTTP transport with the specified bind address.
-    ///
-    /// The server will accept POST requests at `/jsonrpc` on the specified address.
-    ///
-    /// ```no_run
-    /// use json_rpc::Http;
-    ///
-    /// let transport = Http::with_address(("127.0.0.1", 8080)).unwrap();
-    /// ```
-    pub fn with_address(addr: impl std::net::ToSocketAddrs) -> Result<Self, Error> {
-        let mut addrs_iter = addr
-            .to_socket_addrs()
-            .map_err(|e| Error::protocol(format!("Failed to resolve address: {}", e)))?;
-        let address = addrs_iter
-            .next()
-            .ok_or_else(|| Error::protocol("No address found"))?;
-
-        Ok(Self { address })
-    }
-}
-
-impl Default for Http {
-    fn default() -> Self {
-        Self::new()
+    pub fn new(address: std::net::SocketAddr) -> Self {
+        Self { address }
     }
 }
 

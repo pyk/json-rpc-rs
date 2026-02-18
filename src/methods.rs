@@ -116,7 +116,13 @@ impl Methods {
             Err(_) => {
                 let error = crate::types::Error::parse_error("Parse error");
                 let response = Response::error(RequestId::Null, error);
-                return serde_json::to_string(&response).ok();
+                match serde_json::to_string(&response) {
+                    Ok(s) => return Some(s),
+                    Err(e) => {
+                        tracing::error!("Failed to serialize parse error response: {}", e);
+                        return None;
+                    }
+                }
             }
         };
 
@@ -133,12 +139,24 @@ impl Methods {
                 let error = crate::types::Error::invalid_request("Invalid Request");
                 let id_to_use = request_id.unwrap_or(RequestId::Null);
                 let response = Response::error(id_to_use, error);
-                return serde_json::to_string(&response).ok();
+                match serde_json::to_string(&response) {
+                    Ok(s) => return Some(s),
+                    Err(e) => {
+                        tracing::error!("Failed to serialize invalid request response: {}", e);
+                        return None;
+                    }
+                }
             }
             Err(_) => {
                 let error = crate::types::Error::internal_error("Internal error");
                 let response = Response::error(request_id.unwrap_or(RequestId::Null), error);
-                return serde_json::to_string(&response).ok();
+                match serde_json::to_string(&response) {
+                    Ok(s) => return Some(s),
+                    Err(e) => {
+                        tracing::error!("Failed to serialize internal error response: {}", e);
+                        return None;
+                    }
+                }
             }
         };
 
@@ -146,10 +164,11 @@ impl Methods {
             Message::Request(request) => {
                 let method_name = &request.method;
                 let params = request.params.unwrap_or(serde_json::Value::Null);
+                let request_id = request.id.clone();
                 let response = if let Some(handler) = self.get_handler(method_name) {
                     let result = handler(params).await;
                     match result {
-                        Ok(result_value) => Response::success(request.id.clone(), result_value),
+                        Ok(result_value) => Response::success(request_id, result_value),
                         Err(e) => {
                             let error = match e {
                                 crate::error::Error::RpcError { code, message } => {
@@ -157,7 +176,7 @@ impl Methods {
                                 }
                                 _ => crate::types::Error::new(-32603, e.to_string(), None),
                             };
-                            Response::error(request.id.clone(), error)
+                            Response::error(request_id, error)
                         }
                     }
                 } else {
@@ -165,9 +184,15 @@ impl Methods {
                         "Unknown method: {}",
                         method_name
                     ));
-                    Response::error(request.id.clone(), error)
+                    Response::error(request_id, error)
                 };
-                serde_json::to_string(&response).ok()
+                match serde_json::to_string(&response) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        tracing::error!("Failed to serialize response: {}", e);
+                        None
+                    }
+                }
             }
             Message::Notification(notification) => {
                 if let Some(handler) = self.get_handler(&notification.method) {
@@ -184,12 +209,11 @@ impl Methods {
                         Message::Request(request) => {
                             let method_name = &request.method;
                             let params = request.params.unwrap_or(serde_json::Value::Null);
+                            let id = request.id;
                             let response = if let Some(handler) = self.get_handler(method_name) {
                                 let result = handler(params).await;
                                 match result {
-                                    Ok(result_value) => {
-                                        Response::success(request.id.clone(), result_value)
-                                    }
+                                    Ok(result_value) => Response::success(id, result_value),
                                     Err(e) => {
                                         let error = match e {
                                             crate::error::Error::RpcError { code, message } => {
@@ -201,7 +225,7 @@ impl Methods {
                                                 None,
                                             ),
                                         };
-                                        Response::error(request.id.clone(), error)
+                                        Response::error(id, error)
                                     }
                                 }
                             } else {
@@ -209,7 +233,7 @@ impl Methods {
                                     "Unknown method: {}",
                                     method_name
                                 ));
-                                Response::error(request.id.clone(), error)
+                                Response::error(id, error)
                             };
                             responses.push(response);
                         }
@@ -232,7 +256,13 @@ impl Methods {
                     }
                 }
 
-                serde_json::to_string(&responses).ok()
+                match serde_json::to_string(&responses) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        tracing::error!("Failed to serialize batch responses: {}", e);
+                        None
+                    }
+                }
             }
             Message::Response(_response) => None,
         }

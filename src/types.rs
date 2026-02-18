@@ -161,6 +161,19 @@ pub enum Message {
 }
 
 impl Message {
+    /// Extract a RequestId from a JSON value, if present.
+    fn extract_request_id(value: &serde_json::Value) -> Option<RequestId> {
+        value.get("id").and_then(|id_value| match id_value {
+            serde_json::Value::Null => Some(RequestId::Null),
+            serde_json::Value::Number(n) => n.as_u64().map(RequestId::Number),
+            serde_json::Value::String(s) => {
+                let id_str = s.to_string();
+                Some(RequestId::String(id_str))
+            }
+            _ => None,
+        })
+    }
+
     pub fn from_json(value: serde_json::Value) -> Result<Self, InternalError> {
         debug!("Parsing JSON value: {:?}", value);
         let value_ref = &value;
@@ -182,12 +195,7 @@ impl Message {
                     }
                     Err(e) => {
                         debug!("Batch item {} failed to parse: {:?}", index, e);
-                        let id = item.get("id").and_then(|id_value| match id_value {
-                            serde_json::Value::Null => Some(RequestId::Null),
-                            serde_json::Value::Number(n) => n.as_u64().map(RequestId::Number),
-                            serde_json::Value::String(s) => Some(RequestId::String(s.clone())),
-                            _ => None,
-                        });
+                        let id = Self::extract_request_id(item);
                         if let Some(id) = id {
                             let error_response =
                                 Response::error(id, Error::invalid_request("Invalid Request"));

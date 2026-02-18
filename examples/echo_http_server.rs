@@ -44,7 +44,8 @@ async fn main() -> Result<()> {
 
     let methods = Methods::new().add("echo", echo);
 
-    let transport = Http::new();
+    let addr: std::net::SocketAddr = "127.0.0.1:3000".parse()?;
+    let transport = Http::new(addr);
 
     info!("Echo server started on http://localhost:3000");
     info!("Example: POST /jsonrpc with JSON-RPC message");
