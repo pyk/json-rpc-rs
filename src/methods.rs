@@ -190,10 +190,68 @@ impl Methods {
                 }
                 None
             }
-            Message::Batch(_messages) => {
-                let error = crate::types::Error::internal_error("Batch requests not yet supported");
-                let response = Response::error(request_id.unwrap_or(RequestId::Null), error);
-                serde_json::to_string(&response).ok()
+            Message::Batch(messages) => {
+                let mut responses = Vec::new();
+
+                for message in messages {
+                    match message {
+                        Message::Request(request) => {
+                            let method_name = &request.method;
+                            let params = request.params.unwrap_or(serde_json::Value::Null);
+                            let response = if let Some(handler) = self.get_handler(method_name) {
+                                let result = handler(params).await;
+                                match result {
+                                    Ok(result_value) => {
+                                        Response::success(request.id.clone(), result_value)
+                                    }
+                                    Err(e) => {
+                                        let error = match e {
+                                            crate::error::Error::RpcError { code, message } => {
+                                                crate::types::Error::new(code, message, None)
+                                            }
+                                            _ => crate::types::Error::new(
+                                                -32603,
+                                                e.to_string(),
+                                                None,
+                                            ),
+                                        };
+                                        Response::error(request.id.clone(), error)
+                                    }
+                                }
+                            } else {
+                                let error = crate::types::Error::method_not_found(format!(
+                                    "Unknown method: {}",
+                                    method_name
+                                ));
+                                Response::error(request.id.clone(), error)
+                            };
+                            responses.push(response);
+                        }
+                        Message::Notification(notification) => {
+                            // Notifications don't get responses, but we still process them
+                            if let Some(handler) = self.get_handler(&notification.method) {
+                                let params = notification.params.unwrap_or(serde_json::Value::Null);
+                                let _ = handler(params).await;
+                            }
+                            // Don't add to responses
+                        }
+                        Message::Response(response) => {
+                            // This is a response for an invalid batch item, include it as-is
+                            responses.push(response);
+                        }
+                        Message::Batch(_) => {
+                            // Nested batches are not allowed per JSON-RPC spec
+                            let error_response = Response::error(
+                                crate::types::RequestId::Null,
+                                crate::types::Error::invalid_request("Invalid Request"),
+                            );
+                            responses.push(error_response);
+                        }
+                    }
+                }
+
+                // Return array of responses as JSON
+                serde_json::to_string(&responses).ok()
             }
             Message::Response(_response) => None,
         }

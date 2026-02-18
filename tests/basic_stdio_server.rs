@@ -1,23 +1,31 @@
-//! Integration tests for basic_server example.
+//! Integration tests for basic_stdio_server example.
 //!
-//! This test suite verifies the basic_server example works correctly and
+//! This test suite verifies the basic_stdio_server example works correctly and
 //! validates JSON-RPC 2.0 error handling. It tests all error codes defined
 //! in the JSON-RPC 2.0 specification.
+//!
+//! Run test:
+//!
+//! ```shell
+//! cargo test --test basic_stdio_server
+//! ```
+//!
 
 pub mod common;
 
+#[cfg(test)]
 mod tests {
     use super::common;
     use assert_cmd::Command;
     use serde_json::json;
 
     fn send_request(request: &str) -> String {
-        let binary_path = common::get_example_path("basic_server").unwrap();
+        let binary_path = common::get_example_path("basic_stdio_server").unwrap();
 
         let output = Command::new(&binary_path)
             .write_stdin(request)
             .output()
-            .expect("Failed to execute basic_server");
+            .expect("Failed to execute basic_stdio_server");
 
         eprintln!("Server Logs:\n{}", String::from_utf8_lossy(&output.stderr));
 

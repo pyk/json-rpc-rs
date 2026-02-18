@@ -7,7 +7,7 @@
 //! Usage:
 //!
 //! ```bash
-//! echo '{"jsonrpc":"2.0","method":"echo","params":{"message":"hello"},"id":1}' | cargo run --example echo_server
+//! echo '{"jsonrpc":"2.0","method":"echo","params":{"message":"hello"},"id":1}' | cargo run --example echo_stdio_server
 //! ```
 //!
 //! Expected response:

@@ -1,12 +1,20 @@
-//! Integration tests for echo_server example.
+//! Integration tests for echo_stdio_server example.
 //!
-//! This test suite verifies the echo_server example works correctly by:
+//! This test suite verifies the echo_stdio_server example works correctly by:
 //! - Running the example binary
 //! - Sending JSON-RPC requests via stdin
 //! - Capturing and validating stdout responses
+//!
+//! Run test:
+//!
+//! ```shell
+//! cargo test --test echo_stdio_server
+//! ```
+//!
 
 pub mod common;
 
+#[cfg(test)]
 mod tests {
     use super::common;
     use assert_cmd::Command;
@@ -15,12 +23,12 @@ mod tests {
     /// Helper function to send a JSON-RPC request to the echo server and get the response.
     /// Takes a JSON-RPC request string as input and returns the response string.
     fn send_echo_request(request: &str) -> String {
-        let binary_path = common::get_example_path("echo_server").unwrap();
+        let binary_path = common::get_example_path("echo_stdio_server").unwrap();
 
         let output = Command::new(&binary_path)
             .write_stdin(request)
             .output()
-            .expect("Failed to execute echo_server");
+            .expect("Failed to execute echo_stdio_server");
 
         String::from_utf8(output.stdout).expect("Response is not valid UTF-8")
     }

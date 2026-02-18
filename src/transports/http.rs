@@ -80,7 +80,9 @@ impl Http {
     /// let transport = Http::new();
     /// ```
     pub fn new() -> Self {
+        // Unwrap is safe here because localhost:3000 is always a valid address
         Self::with_address((std::net::Ipv4Addr::LOCALHOST, DEFAULT_PORT))
+            .expect("Failed to resolve default address")
     }
 
     /// Create a new HTTP transport with the specified bind address.
@@ -91,19 +93,27 @@ impl Http {
     ///
     /// * `addr` - The address to bind the HTTP server to
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the address cannot be resolved.
+    ///
     /// # Example
     ///
     /// ```no_run
     /// use json_rpc::Http;
     ///
-    /// let transport = Http::with_address(([127, 0, 0, 1], 8080));
+    /// let transport = Http::with_address(([127, 0, 0, 1], 8080)).unwrap();
     /// ```
-    pub fn with_address(addr: impl std::net::ToSocketAddrs) -> Self {
+    pub fn with_address(addr: impl std::net::ToSocketAddrs) -> Result<Self, Error> {
         // Resolve the address to a SocketAddr
-        let mut addrs_iter = addr.to_socket_addrs().unwrap();
-        let address = addrs_iter.next().expect("No address found");
+        let mut addrs_iter = addr
+            .to_socket_addrs()
+            .map_err(|e| Error::protocol(format!("Failed to resolve address: {}", e)))?;
+        let address = addrs_iter
+            .next()
+            .ok_or_else(|| Error::protocol("No address found"))?;
 
-        Self { address }
+        Ok(Self { address })
     }
 }
 
