@@ -36,8 +36,19 @@
 //! ```
 
 use anyhow::Result;
-use json_rpc::{Error, Server};
+use json_rpc::{Error, Methods, Stdio};
 use tracing::info;
+
+async fn hello(params: String) -> Result<String, Error> {
+    if params != "world" {
+        return Err(Error::rpc(-32000, "text must be 'world'"));
+    }
+    Ok(format!("Hello, {}!", params))
+}
+
+async fn internal_error(_params: ()) -> Result<(), Error> {
+    Err(Error::protocol("Internal error occurred"))
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -47,18 +58,14 @@ async fn main() -> Result<()> {
         .init();
 
     info!("Initializing basic server for error handling tests");
-    let mut server = Server::new();
 
-    server.register("hello", |params: String| async move {
-        if params != "world" {
-            return Err(Error::rpc(-32000, "text must be 'world'"));
-        }
-        Ok(format!("Hello, {}!", params))
-    })?;
+    // Build our application with methods
+    let methods = Methods::new()
+        .add("hello", hello)
+        .add("internal_error", internal_error);
 
-    server.register("internal_error", |_params: ()| async move {
-        Err::<(), Error>(Error::protocol("Internal error occurred"))
-    })?;
+    // Create stdio transport
+    let transport = Stdio::default();
 
     info!("Basic server started. Send JSON-RPC messages via stdin.");
     info!("Available methods:");
@@ -72,7 +79,7 @@ async fn main() -> Result<()> {
     info!("  {{\"jsonrpc\":\"2.0\",\"method\":\"internal_error\",\"id\":3}}");
 
     info!("Starting server run loop");
-    server.run().await?;
+    json_rpc::serve(transport, methods).await?;
     info!("Server run loop completed");
 
     Ok(())

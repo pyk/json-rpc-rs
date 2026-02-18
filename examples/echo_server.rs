@@ -17,8 +17,13 @@
 //! ```
 
 use anyhow::Result;
-use json_rpc::Server;
+use json_rpc::{Methods, Stdio};
+use serde_json::Value;
 use tracing::info;
+
+async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
+    Ok(params)
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -28,18 +33,18 @@ async fn main() -> Result<()> {
         .init();
 
     info!("Initializing echo server");
-    let mut server = Server::new();
 
-    server.register("echo", |params: serde_json::Value| async move {
-        let result = Ok(params);
-        result
-    })?;
+    // Build our application with methods
+    let methods = Methods::new().add("echo", echo);
+
+    // Create stdio transport
+    let transport = Stdio::default();
 
     info!("Echo server started. Send JSON-RPC messages via stdin.");
     info!("Example: {{\"jsonrpc\":\"2.0\",\"method\":\"echo\",\"params\":\"hello\",\"id\":1}}");
 
     info!("Starting server run loop");
-    server.run().await?;
+    json_rpc::serve(transport, methods).await?;
     info!("Server run loop completed");
 
     Ok(())
