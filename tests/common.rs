@@ -42,6 +42,39 @@ pub fn ensure_examples_built() -> Result<()> {
     Ok(())
 }
 
+/// Build axum example binaries with features if they haven't been built yet.
+///
+/// This function is similar to ensure_examples_built() but enables the axum feature
+/// which is required by some examples like basic_axum and echo_axum.
+pub fn ensure_axum_examples_built() -> Result<()> {
+    let target_dir = get_target_dir();
+    let profile = get_profile();
+    let examples_dir = target_dir.join(profile).join("examples");
+
+    let axum_examples = ["basic_axum", "echo_axum"];
+    let all_exist = axum_examples
+        .iter()
+        .all(|name| examples_dir.join(name).exists());
+
+    if !all_exist {
+        eprintln!("Axum example binaries not found, building...");
+
+        let status = Command::new("cargo")
+            .args(["build", "--examples", "--features", "axum"])
+            .status()?;
+
+        ensure!(
+            status.success(),
+            "cargo build --examples --features axum failed with status: {}",
+            status
+        );
+
+        eprintln!("Axum examples built successfully");
+    }
+
+    Ok(())
+}
+
 /// Get the path to a specific example binary.
 ///
 /// Ensures examples are built before returning the path.
@@ -53,11 +86,16 @@ pub fn ensure_examples_built() -> Result<()> {
 /// // path will be something like: /path/to/project/target/debug/examples/basic_server
 /// ```
 pub fn get_example_path(name: &str) -> Result<PathBuf> {
-    ensure_examples_built()?;
-
     let target_dir = get_target_dir();
     let profile = get_profile();
     let binary_path = target_dir.join(profile).join("examples").join(name);
+
+    // For axum examples, ensure they're built with the correct features
+    if matches!(name, "basic_axum|echo_axum") {
+        ensure_axum_examples_built()?;
+    } else {
+        ensure_examples_built()?;
+    }
 
     ensure!(
         binary_path.exists(),

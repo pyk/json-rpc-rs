@@ -1,21 +1,19 @@
-//! Integration tests for basic_http_server example.
+//! Integration tests for basic_axum example.
 //!
-//! This test suite verifies the basic_http_server example works correctly and
+//! This test suite verifies that basic_axum example works correctly and
 //! validates JSON-RPC 2.0 error handling. It tests all error codes defined
 //! in the JSON-RPC 2.0 specification.
 //!
 //! Run test:
 //!
 //! ```shell
-//! cargo test --test basic_http_server
+//! cargo test --test basic_axum
 //! ```
-//!
 
 pub mod common;
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::process::{Child, Command};
     use std::sync::OnceLock;
     use tokio::net::TcpStream;
@@ -29,7 +27,6 @@ mod tests {
 
     static SERVER: OnceLock<Mutex<ServerGuard>> = OnceLock::new();
     static SERVER_URL: &str = "http://127.0.0.1:3001/jsonrpc";
-    static LOG_FILE_PATH: &str = "/tmp/basic_http_server_test.log";
     static CLEANUP_DONE: OnceLock<()> = OnceLock::new();
 
     struct ServerGuard {
@@ -42,14 +39,7 @@ mod tests {
         }
     }
 
-    /// Print server logs for debugging
-    fn print_server_logs() {
-        if let Ok(logs) = fs::read_to_string(LOG_FILE_PATH) {
-            eprintln!("Server Logs:\n{}", logs);
-        }
-    }
-
-    /// Start the HTTP basic server if it's not already running.
+    /// Start HTTP basic server if it's not already running.
     /// This function is called automatically when needed.
     async fn setup_server() -> &'static str {
         CLEANUP_DONE.get_or_init(|| {
@@ -60,17 +50,12 @@ mod tests {
         });
 
         let server = SERVER.get_or_init(|| {
-            let binary_path = common::get_example_path("basic_http_server").unwrap();
+            let binary_path = common::get_example_path("basic_axum").unwrap();
 
-            let _ = fs::remove_file(LOG_FILE_PATH);
-
-            let log_file = fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(LOG_FILE_PATH)
+            let child = Command::new(&binary_path)
+                .stderr(std::process::Stdio::piped())
+                .spawn()
                 .unwrap();
-
-            let child = Command::new(&binary_path).stderr(log_file).spawn().unwrap();
 
             Mutex::new(ServerGuard { child })
         });
@@ -78,17 +63,12 @@ mod tests {
         let mut guard = server.lock().await;
 
         if let Ok(Some(_)) = guard.child.try_wait() {
-            let binary_path = common::get_example_path("basic_http_server").unwrap();
+            let binary_path = common::get_example_path("basic_axum").unwrap();
 
-            let _ = fs::remove_file(LOG_FILE_PATH);
-
-            let log_file = fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(LOG_FILE_PATH)
+            guard.child = Command::new(&binary_path)
+                .stderr(std::process::Stdio::piped())
+                .spawn()
                 .unwrap();
-
-            guard.child = Command::new(&binary_path).stderr(log_file).spawn().unwrap();
         }
 
         wait_for_server_ready().await;
@@ -97,6 +77,7 @@ mod tests {
     }
 
     /// Wait for the server to be ready to accept connections.
+    /// This polls the server using TCP connection until it responds or times out.
     async fn wait_for_server_ready() {
         let addr: std::net::SocketAddr = "127.0.0.1:3001".parse().unwrap();
         let mut attempts = 0;
@@ -135,15 +116,10 @@ mod tests {
             .header("Content-Type", "application/json")
             .json(&request)
             .send()
-            .await;
+            .await
+            .unwrap();
 
-        match response {
-            Ok(resp) => resp.text().await.unwrap(),
-            Err(e) => {
-                print_server_logs();
-                panic!("Failed to connect to server: {}", e);
-            }
-        }
+        response.text().await.unwrap()
     }
 
     /// Helper function to send a raw string JSON-RPC request.
@@ -161,15 +137,10 @@ mod tests {
             .header("Content-Type", "application/json")
             .body(request.to_string())
             .send()
-            .await;
+            .await
+            .unwrap();
 
-        match response {
-            Ok(resp) => resp.text().await.unwrap(),
-            Err(e) => {
-                print_server_logs();
-                panic!("Failed to connect to server: {}", e);
-            }
-        }
+        response.text().await.unwrap()
     }
 
     #[tokio::test]

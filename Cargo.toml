@@ -27,9 +27,16 @@ tracing = "0.1"
 # Async runtime
 tokio = {version = "1", features = ["rt", "io-std", "io-util", "sync"]}
 
-# HTTP Transports
-axum = "0.8"
-http = "1.4"
+# Futures
+futures = "0.3"
+
+# HTTP Transports (optional)
+axum = {version = "0.8", optional = true}
+http = {version = "1.4", optional = true}
+
+[features]
+default = []
+axum = ["dep:axum", "dep:http"]
 
 [dev-dependencies]
 # Error handling for examples
@@ -46,3 +53,17 @@ tokio = {version = "1", features = ["full"]}
 
 # HTTP client for testing
 reqwest = {version = "0.13", features = ["json"]}
+axum = {version = "0.8"}
+
+# Examples requiring axum feature
+[[example]]
+name = "echo_axum"
+required-features = ["axum"]
+
+[[example]]
+name = "basic_axum"
+required-features = ["axum"]
+
+[[example]]
+name = "graceful_shutdown_http"
+required-features = ["axum"]

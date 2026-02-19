@@ -1,13 +1,12 @@
-//! JSON-RPC method registry with builder pattern.
+//! JSON-RPC handler with builder pattern.
 //!
-//! This module provides a `Methods` type for registering JSON-RPC methods
-//! using a builder pattern. The registry can be passed to the `serve` function
-//! to start a JSON-RPC server.
+//! This module provides a `JsonRpc` type for registering JSON-RPC methods
+//! using a builder pattern. The handler can process JSON-RPC messages and
+//! return responses.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -24,33 +23,33 @@ type BoxedHandler = Box<
         + Sync,
 >;
 
-/// Registry of JSON-RPC methods with a builder pattern.
+/// JSON-RPC handler with a builder pattern.
 ///
-/// `Methods` allows you to register JSON-RPC method handlers using a fluent
-/// builder API. The registered methods can then be passed to the `serve` function
-/// to start a JSON-RPC server.
+/// `JsonRpc` allows you to register JSON-RPC method handlers using a fluent
+/// builder API. The handler can process JSON-RPC messages via the `call()` method.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use json_rpc::Methods;
+/// use json_rpc::JsonRpc;
 ///
 /// async fn echo(params: serde_json::Value) -> Result<serde_json::Value, json_rpc::Error> {
 ///     Ok(params)
 /// }
 ///
-/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
-/// let methods = Methods::new()
+/// let json_rpc = JsonRpc::new()
 ///     .add("echo", echo);
-/// # json_rpc::serve(json_rpc::Stdio::new(), methods).await.unwrap();
+///
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+/// let response = json_rpc.call(r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#).await;
 /// # });
 /// ```
-pub struct Methods {
+pub struct JsonRpc {
     handlers: HashMap<String, BoxedHandler>,
 }
 
-impl Methods {
-    /// Create a new empty method registry.
+impl JsonRpc {
+    /// Create a new empty JSON-RPC handler.
     pub fn new() -> Self {
         Self {
             handlers: HashMap::new(),
@@ -65,14 +64,14 @@ impl Methods {
     /// # Example
     ///
     /// ```no_run
-    /// use json_rpc::Methods;
+    /// use json_rpc::JsonRpc;
     /// use serde_json::Value;
     ///
     /// async fn add(params: (i32, i32)) -> Result<i32, json_rpc::Error> {
     ///     Ok(params.0 + params.1)
     /// }
     ///
-    /// let methods = Methods::new()
+    /// let json_rpc = JsonRpc::new()
     ///     .add("add", add);
     /// ```
     pub fn add<F, P, R, Fut>(mut self, method: &str, handler: F) -> Self
@@ -103,14 +102,16 @@ impl Methods {
 
     /// Process a JSON-RPC message and return the response JSON string (if any).
     ///
-    /// This helper method is used by transport implementations to process
-    /// incoming JSON-RPC messages. It handles:
+    /// This method processes a JSON-RPC message string and returns the response.
+    /// It handles:
     ///
     /// - JSON parsing and validation
     /// - Message type detection (request, notification, batch, response)
     /// - Method routing and execution
     /// - Error handling and response generation
-    pub async fn process_message(&self, json_str: &str) -> Option<String> {
+    ///
+    /// Returns `None` for notifications (which don't require a response).
+    pub async fn call(&self, json_str: &str) -> Option<String> {
         let value: serde_json::Value = match serde_json::from_str(json_str) {
             Ok(v) => v,
             Err(_) => {
@@ -269,8 +270,9 @@ impl Methods {
     }
 }
 
-impl Default for Methods {
+impl Default for JsonRpc {
     fn default() -> Self {
         Self::new()
     }
 }
+

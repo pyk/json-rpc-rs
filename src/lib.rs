@@ -1,16 +1,16 @@
 //! A JSON-RPC 2.0 implementation with a simple builder pattern.
 //!
 //! This library provides a simple, user-friendly API for creating JSON-RPC
-//! servers. It handles the JSON-RPC protocol layer including message parsing,
+//! handlers. It handles the JSON-RPC protocol layer including message parsing,
 //! method routing, and response generation. Methods are registered using a
 //! builder pattern with automatic parameter deserialization, making it easy to
 //! define handlers that accept typed parameters.
 //!
 //! # Design Goals
 //!
-//! The library prioritizes simplicity and usability for JSON-RPC servers.
-//! It uses a builder pattern (`Methods::new().add()`) for method registration
-//! and supports multiple transport implementations (stdio, in-memory, custom).
+//! The library prioritizes simplicity and usability for JSON-RPC handlers.
+//! It uses a builder pattern (`JsonRpc::new().add()`) for method registration
+//! and supports multiple integration options (stdio, HTTP via axum, custom).
 //!
 //! # Architecture
 //!
@@ -20,39 +20,21 @@
 //! Notification, and Error. These structures handle serialization and
 //! deserialization of JSON-RPC messages.
 //!
-//! [`transports`] defines the Transport trait and provides implementations. The
-//! Stdio transport uses NDJSON (newline-delimited JSON) over stdin/stdout,
-//! while InMemory is useful for testing. Custom transports can be implemented
-//! by extending the Transport trait.
-//!
-//! [`methods`] contains the Methods type with a builder pattern API for
-//! registering JSON-RPC method handlers.
+//! [`jsonrpc`] contains the `JsonRpc` type with a builder pattern API for
+//! registering JSON-RPC method handlers and processing messages.
 //!
 //! [`error`] defines internal error types for implementation-level errors,
 //! separate from JSON-RPC protocol errors sent over the wire.
 //!
+//! [`axum`] (feature-gated) provides integration with the axum web framework,
+//! allowing you to serve JSON-RPC over HTTP with minimal boilerplate.
+//!
 //! # Quick Start
 //!
-//! Define methods and serve:
+//! Create a handler and process messages:
 //!
 //! ```no_run
-//! use json_rpc::Methods;
-//! use serde_json::Value;
-//!
-//! async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
-//!     Ok(params)
-//! }
-//!
-//! let methods = Methods::new()
-//!     .add("echo", echo);
-//!
-//! # Ok::<(), json_rpc::Error>(())
-//! ```
-//!
-//! Run the server with the default Stdio transport:
-//!
-//! ```no_run
-//! use json_rpc::{Methods, Stdio};
+//! use json_rpc::JsonRpc;
 //! use serde_json::Value;
 //!
 //! async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
@@ -60,21 +42,51 @@
 //! }
 //!
 //! # tokio::runtime::Runtime::new().unwrap().block_on(async {
-//! let methods = Methods::new()
+//! let json_rpc = JsonRpc::new()
 //!     .add("echo", echo);
 //!
-//! let transport = Stdio::new();
-//! json_rpc::serve(transport, methods).await.unwrap();
-//! # Ok::<(), json_rpc::Error>(())
+//! let response = json_rpc.call(r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#).await;
+//! # });
+//! ```
+//!
+//! # Stdio Integration
+//!
+//! Use stdio for command-line tools and LSP implementations:
+//!
+//! ```no_run
+//! use json_rpc::JsonRpc;
+//! use serde_json::Value;
+//! use tokio::io::AsyncBufReadExt;
+//!
+//! async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
+//!     Ok(params)
+//! }
+//!
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
+//! let json_rpc = JsonRpc::new().add("echo", echo);
+//!
+//! let stdin = tokio::io::stdin();
+//! let mut reader = tokio::io::BufReader::new(stdin);
+//! let mut line = String::new();
+//!
+//! while reader.read_line(&mut line).await.unwrap() > 0 {
+//!     let trimmed = line.trim();
+//!     if !trimmed.is_empty() {
+//!         if let Some(response) = json_rpc.call(trimmed).await {
+//!             println!("{}", response);
+//!         }
+//!     }
+//!     line.clear();
+//! }
 //! # });
 //! ```
 //!
 //! # Struct Parameters
 //!
-//! Methods can use struct parameters for more complex APIs:
+//! Handlers can use struct parameters for more complex APIs:
 //!
 //! ```no_run
-//! use json_rpc::{Methods, Stdio};
+//! use json_rpc::JsonRpc;
 //! use serde::Deserialize;
 //!
 //! # tokio::runtime::Runtime::new().unwrap().block_on(async {
@@ -88,11 +100,8 @@
 //!     Ok(format!("Server {} v{} initialized", params.name, params.version))
 //! }
 //!
-//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
-//! let methods = Methods::new()
+//! let json_rpc = JsonRpc::new()
 //!     .add("initialize", initialize);
-//! # json_rpc::serve(Stdio::new(), methods).await.unwrap();
-//! # });
 //! # });
 //! ```
 //!
@@ -102,8 +111,7 @@
 //! specific codes:
 //!
 //! ```no_run
-//! use json_rpc::{Methods, Error, Stdio};
-//! use serde_json::Value;
+//! use json_rpc::{JsonRpc, Error};
 //!
 //! async fn divide(params: (i32, i32)) -> Result<i32, Error> {
 //!     if params.1 == 0 {
@@ -112,114 +120,36 @@
 //!     Ok(params.0 / params.1)
 //! }
 //!
-//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
-//! let methods = Methods::new()
-//!     .add("divide", divide);
-//! # json_rpc::serve(Stdio::new(), methods).await.unwrap();
-//! # });
+//! let json_rpc = JsonRpc::new().add("divide", divide);
 //! ```
 //!
-//! # Transports
+//! # Axum Integration
 //!
-//! The library separates protocol handling from transport. All transports implement the
-//! [`Transport`] trait, making them interchangeable. Choose the appropriate transport
-//! based on your use case.
-//!
-//! ## Stdio Transport
-//!
-//! The Stdio transport reads newline-delimited JSON from stdin and writes responses to stdout.
-//! This is useful for LSP (Language Server Protocol) implementations and command-line tools.
+//! The axum integration (enabled with the `axum` feature) provides a simple
+//! way to serve JSON-RPC over HTTP:
 //!
 //! ```no_run
-//! use json_rpc::{Methods, Stdio};
-//! use serde_json::Value;
+//! # #[cfg(feature = "axum")]
+//! # {
+//! use json_rpc::{JsonRpc, axum::IntoAxumHandler};
+//! use axum::Router;
 //!
-//! async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
+//! async fn echo(params: serde_json::Value) -> Result<serde_json::Value, json_rpc::Error> {
 //!     Ok(params)
 //! }
 //!
-//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
-//! let methods = Methods::new()
-//!     .add("echo", echo);
-//!
-//! let transport = Stdio::new();
-//! json_rpc::serve(transport, methods).await.unwrap();
-//! # });
+//! let json_rpc = JsonRpc::new().add("echo", echo);
+//! let app = Router::new().route("/jsonrpc", json_rpc.into_axum_handler());
+//! # }
 //! ```
-//!
-//! ## HTTP Transport
-//!
-//! The HTTP transport serves JSON-RPC over HTTP POST using axum. It accepts requests at
-//! `/jsonrpc` and returns responses as JSON in the HTTP response body. This is ideal for
-//! web services and APIs.
-//!
-//! ```no_run
-//! use json_rpc::{Http, Methods};
-//! use serde_json::Value;
-//! use std::net::SocketAddr;
-//!
-//! async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
-//!     Ok(params)
-//! }
-//!
-//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
-//! let methods = Methods::new().add("echo", echo);
-//! let addr: SocketAddr = "127.0.0.1:3000".parse().unwrap();
-//! let transport = Http::new(addr);
-//! json_rpc::serve(transport, methods).await.unwrap();
-//! # });
-//! ```
-//!
-//! ## InMemory Transport
-//!
-//! The InMemory transport provides an in-memory channel for testing and development.
-//! It's useful for unit tests where you don't need actual I/O.
-//!
-//! ## Custom Transports
-//!
-//! Implement custom transports by implementing the [`Transport`] trait to support
-//! additional communication channels such as WebSockets, TCP sockets, or other protocols.
 
 pub use error::Error;
-pub use methods::Methods;
-pub use transports::{Http, InMemory, Stdio, Transport};
+pub use jsonrpc::JsonRpc;
 pub use types::{Message, Notification, Request, RequestId, Response};
 
-/// Serve a JSON-RPC server with the given transport and methods.
-///
-/// This function creates a server with the provided methods and runs it
-/// using the specified transport. The transport determines how JSON-RPC
-/// messages are sent and received (e.g., stdio, TCP, in-memory).
-///
-/// Each transport implementation handles its own serving logic, allowing
-/// for different communication patterns (continuous stream, request/response, etc.).
-///
-/// # Example
-///
-/// ```no_run
-/// use json_rpc::{Methods, Stdio};
-/// use serde_json::Value;
-///
-/// async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
-///     Ok(params)
-/// }
-///
-/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
-/// let methods = Methods::new()
-///     .add("echo", echo);
-///
-/// let transport = Stdio::new();
-/// json_rpc::serve(transport, methods).await.unwrap();
-/// # });
-/// ```
-pub async fn serve<T>(transport: T, methods: Methods) -> Result<(), Error>
-where
-    T: Transport,
-{
-    transport.serve(methods).await
-}
-
 pub mod error;
-pub mod methods;
-pub mod transports;
+pub mod jsonrpc;
 pub mod types;
+
+#[cfg(feature = "axum")]
+pub mod axum;
