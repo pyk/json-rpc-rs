@@ -21,7 +21,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-json-rpc-rs = "0.2"
+json-rpc-rs = "0.3"
 tokio = { version = "1", features = ["rt", "io-util"] }
 ```
 
@@ -29,7 +29,7 @@ For axum integration, enable the feature:
 
 ```toml
 [dependencies]
-json-rpc-rs = { version = "0.2", features = ["axum"] }
+json-rpc-rs = { version = "0.3", features = ["axum"] }
 ```
 
 ## Quick Start
