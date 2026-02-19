@@ -2,8 +2,8 @@
 name = "json-rpc-rs"
 version = "0.2.0"
 edition = "2024"
-description = "An async Rust implementation of JSON-RPC 2.0"
-keywords = ["json-rpc", "rpc", "server", "json", "async"]
+description = "Framework-agnostic JSON-RPC 2.0 handler with Bring Your Own Transport"
+keywords = ["json-rpc", "rpc", "handler", "json", "async"]
 categories = ["network-programming", "asynchronous"]
 license = "MIT"
 repository = "https://github.com/pyk/json-rpc-rs"
