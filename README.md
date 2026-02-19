@@ -1,20 +1,19 @@
 # json-rpc-rs
 
-An async Rust implementation of JSON-RPC 2.0. This library provides a simple,
-user-friendly API for creating JSON-RPC handlers with async/await support and
-full JSON-RPC 2.0 compliance.
+A framework-agnostic async Rust implementation of JSON-RPC 2.0 with Bring Your
+Own Transport. Process JSON-RPC messages with async/await support and full
+specification compliance.
 
 ## Features
 
-- **Builder Pattern**: Configure handlers with a fluent, intuitive API
-- **Type-Safe Methods**: Register methods using closures with automatic
-  parameter deserialization
-- **Async/Await**: Built on tokio for efficient async request handling
-- **Multiple Integrations**: Use stdio, HTTP (via axum), or custom integrations
-- **JSON-RPC 2.0 Compliant**: Full support for requests, responses,
-  notifications, and errors
-- **Batch Requests**: Full JSON-RPC 2.0 batch request support
-- **Error Handling**: Simple error creation with JSON-RPC compliant error codes
+- Configure handlers with the builder pattern
+- Register methods with closures and automatic parameter deserialization
+- Process messages asynchronously with tokio
+- Bring Your Own Transport: integrate with stdio, HTTP, WebSocket, TCP, or any
+  custom transport
+- Support requests, responses, notifications, and errors
+- Handle batch requests
+- Create errors with JSON-RPC compliant codes
 
 ## Installation
 
@@ -35,9 +34,9 @@ json-rpc-rs = { version = "0.2", features = ["axum"] }
 
 ## Quick Start
 
-### Stdio
-
-Create a simple JSON-RPC handler with one method and run it using stdio:
+Create a JSON-RPC handler and process messages. Since this library uses Bring
+Your Own Transport, you read JSON strings from your transport, call
+`json_rpc.call()`, and write the response back.
 
 ```rust
 use json_rpc::JsonRpc;
@@ -52,86 +51,20 @@ async fn main() -> Result<(), json_rpc::Error> {
     let json_rpc = JsonRpc::new()
         .add("echo", echo);
 
-    let stdin = tokio::io::stdin();
-    let mut reader = tokio::io::BufReader::new(stdin);
-    let mut line = String::new();
-
-    while reader.read_line(&mut line).await? > 0 {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() {
-            if let Some(response) = json_rpc.call(trimmed).await {
-                println!("{}", response);
-            }
-        }
-        line.clear();
+    // Read from your transport (stdin, HTTP, WebSocket, TCP, etc.)
+    let message = r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#;
+    if let Some(response) = json_rpc.call(message).await {
+        // Write the response back to your transport
+        println!("{}", response);
     }
 
     Ok(())
 }
 ```
 
-Send a request:
-
-```bash
-echo '{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}' | cargo run
-```
-
-Response:
-
-```json
-{ "jsonrpc": "2.0", "result": "hello", "id": 1 }
-```
-
-### Axum (HTTP)
-
-Create a simple JSON-RPC server with one method using axum:
-
-```rust
-use axum::{Router, routing::post};
-use json_rpc::{JsonRpc, axum};
-use serde_json::Value;
-use std::sync::Arc;
-
-async fn echo(params: Value) -> Result<Value, json_rpc::Error> {
-    Ok(params)
-}
-
-#[tokio::main]
-async fn main() -> Result<(), json_rpc::Error> {
-    let json_rpc = JsonRpc::new()
-        .add("echo", echo);
-
-    let app = Router::new()
-        .route("/jsonrpc", post(axum::handler))
-        .with_state(Arc::new(json_rpc));
-
-    let addr: std::net::SocketAddr = "127.0.0.1:3000".parse()?;
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
-
-    Ok(())
-}
-```
-
-Send a request:
-
-```bash
-curl -X POST http://localhost:3000/jsonrpc \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}'
-```
-
-Response:
-
-```json
-{ "jsonrpc": "2.0", "result": "hello", "id": 1 }
-```
-
 ## Usage
 
 ### Creating a Handler
-
-Create a handler with default configuration:
 
 ```rust
 use json_rpc::JsonRpc;
@@ -175,7 +108,9 @@ json_rpc.add("distance", |params: Point| async move {
 
 ### Processing Messages
 
-Process JSON-RPC messages directly:
+The `call()` method processes JSON-RPC messages. Pass a JSON string from your
+transport, get back a JSON response string. Returns `None` for notifications
+(requests without `id`). This is the Bring Your Own Transport pattern in action.
 
 ```rust
 match json_rpc.call(json_message).await {
@@ -189,10 +124,9 @@ match json_rpc.call(json_message).await {
 }
 ```
 
-### Stdio Integration
+### Example: Stdio
 
-The stdio integration reads newline-delimited JSON from stdin and processes each
-line:
+Read newline-delimited JSON from stdin and write responses to stdout:
 
 ```rust
 use json_rpc::JsonRpc;
@@ -213,13 +147,15 @@ while reader.read_line(&mut line).await? > 0 {
 }
 ```
 
-This is ideal for command-line tools, LSP (Language Server Protocol)
-implementations, and process communication.
+Send a request:
 
-### Axum Integration
+```bash
+echo '{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}' | cargo run
+```
 
-The axum integration (enabled with the `axum` feature) provides a simple way to
-serve JSON-RPC over HTTP:
+### Example: Axum
+
+The axum feature provides a handler for HTTP integration:
 
 ```rust
 use axum::{Router, routing::post};
@@ -232,20 +168,18 @@ let app = Router::new()
     .with_state(Arc::new(json_rpc));
 ```
 
-The `handler` function extracts the request body, calls `json_rpc.call()`, and
-returns the appropriate HTTP response. This handles:
+Send a request:
 
-- Request body parsing
-- JSON-RPC message processing
-- Response serialization
-- Error handling
+```bash
+curl -X POST http://localhost:3000/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}'
+```
 
-This is ideal for web services and HTTP-based APIs.
+### Custom Transports
 
-### Custom Integrations
-
-Since json-rpc-rs focuses on message processing rather than being a full server,
-you can easily integrate it with any transport or framework:
+The Bring Your Own Transport pattern lets you integrate with any transport or
+framework. Read a JSON string, call `json_rpc.call()`, write the response.
 
 ```rust
 use json_rpc::JsonRpc;
@@ -253,8 +187,11 @@ use json_rpc::JsonRpc;
 let json_rpc = JsonRpc::new()
     .add("my_method", my_handler);
 
-// Use with your custom transport
-// Example: WebSocket, TCP, etc.
+// Read from WebSocket, TCP, custom protocol, etc.
+let message = receive_message();
+if let Some(response) = json_rpc.call(&message).await {
+    send_response(response);
+}
 ```
 
 ### Error Handling
@@ -282,8 +219,8 @@ json_rpc.add("strict_method", |_params: ()| async move {
 
 ### Batch Requests
 
-The library handles batch requests automatically. The `call()` method accepts
-JSON arrays representing batch requests and returns an array of responses.
+The `call()` method accepts JSON arrays representing batch requests and returns
+an array of responses.
 
 ```bash
 echo '[
@@ -303,7 +240,7 @@ Response:
 
 ## JSON-RPC 2.0 Compliance
 
-This library implements the JSON-RPC 2.0 specification, including:
+Implements the JSON-RPC 2.0 specification:
 
 - Request objects with `jsonrpc`, `method`, `params`, and `id` fields
 - Notification objects (requests without `id`)
@@ -319,21 +256,21 @@ details.
 
 The [examples](examples) directory contains working examples:
 
-- `echo_stdio.rs`: Simple echo handler using stdio
-- `echo_axum.rs`: Simple echo handler using axum (requires `axum` feature)
-- `basic_stdio.rs`: Advanced handler with multiple methods and error handling
-- `basic_axum.rs`: Advanced handler with multiple methods and error handling
-  (requires `axum` feature)
-- `graceful_shutdown_http.rs`: Demonstrates graceful shutdown with axum
-  (requires `axum` feature)
+- `echo_stdio.rs`: Echo handler using stdio
+- `echo_axum.rs`: Echo handler using axum (requires `axum` feature)
+- `basic_stdio.rs`: Handler with multiple methods and error handling
+- `basic_axum.rs`: Handler with multiple methods and error handling (requires
+  `axum` feature)
+- `graceful_shutdown_http.rs`: Graceful shutdown with axum (requires `axum`
+  feature)
 
 Run an example:
 
 ```bash
-# Stdio examples (pipe JSON to stdin)
+# Stdio example
 echo '{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}' | cargo run --example echo_stdio
 
-# Axum examples (requires axum feature)
+# Axum example
 cargo run --example echo_axum --features axum
 ```
 

@@ -1,8 +1,16 @@
 //! Axum integration for JSON-RPC handlers.
 //!
-//! This module provides integration between the `JsonRpc` handler and the axum
-//! web framework. It enables you to easily serve JSON-RPC requests over HTTP
-//! using axum.
+//! This module provides an optional integration between the `JsonRpc` handler and
+//! the axum web framework. Enable the `axum` feature in Cargo.toml to use it.
+//!
+//! The handler reads the HTTP request body, calls `JsonRpc::call()`, and returns
+//! the HTTP response. This follows the Bring Your Own Transport pattern: axum
+//! handles the HTTP transport, the library handles JSON-RPC message processing.
+//!
+//! ```toml
+//! [dependencies]
+//! json-rpc-rs = { version = "0.2", features = ["axum"] }
+//! ```
 //!
 //! # Example
 //!
@@ -33,19 +41,20 @@ use crate::JsonRpc;
 
 /// Axum handler for processing JSON-RPC requests.
 ///
-/// This handler extracts the request body, calls the JSON-RPC handler,
-/// and returns the appropriate HTTP response.
+/// This handler extracts the HTTP request body, calls `JsonRpc::call()` with the
+/// JSON string, and returns the HTTP response. Returns HTTP 204 No Content for
+/// notifications (JSON-RPC requests without an `id` field).
 ///
-/// # Example
+/// The handler limits request body size to 10MB to prevent memory exhaustion.
 ///
 /// ```no_run
 /// use json_rpc::{JsonRpc, axum::handler};
 /// use axum::Router;
 /// use std::sync::Arc;
-///
-/// let json_rpc = JsonRpc::new().add("echo", echo);
+//!
+//! let json_rpc = JsonRpc::new().add("echo", echo);
 /// let app = Router::new()
-///     .route("/jsonrpc", handler)
+//!     .route("/jsonrpc", handler)
 ///     .with_state(Arc::new(json_rpc));
 /// ```
 pub async fn handler(State(json_rpc): State<Arc<JsonRpc>>, request: Request) -> impl IntoResponse {
@@ -84,7 +93,7 @@ pub async fn handler(State(json_rpc): State<Arc<JsonRpc>>, request: Request) -> 
         None => {
             // Notification - no response needed
             tracing::debug!("Notification processed - no response needed");
-            StatusCode::OK.into_response()
+            StatusCode::NO_CONTENT.into_response()
         }
     }
 }

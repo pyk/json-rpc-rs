@@ -1,37 +1,34 @@
-//! A JSON-RPC 2.0 implementation with a simple builder pattern.
+//! A framework-agnostic JSON-RPC 2.0 implementation with Bring Your Own Transport.
 //!
-//! This library provides a simple, user-friendly API for creating JSON-RPC
-//! handlers. It handles the JSON-RPC protocol layer including message parsing,
-//! method routing, and response generation. Methods are registered using a
-//! builder pattern with automatic parameter deserialization, making it easy to
-//! define handlers that accept typed parameters.
+//! This library handles the JSON-RPC protocol layer including message parsing,
+//! method routing, and response generation. You register methods with the
+//! `JsonRpc` handler, then process JSON-RPC messages from any transport.
 //!
-//! # Design Goals
+//! # Bring Your Own Transport
 //!
-//! The library prioritizes simplicity and usability for JSON-RPC handlers.
-//! It uses a builder pattern (`JsonRpc::new().add()`) for method registration
-//! and supports multiple integration options (stdio, HTTP via axum, custom).
+//! The library does not include transport implementations. You read JSON strings
+//! from your transport (stdio, HTTP, WebSocket, TCP, etc.), call `JsonRpc::call()`,
+//! and write the response back. This gives you full control over your transport
+//! layer.
 //!
-//! # Architecture
+//! # Modules
 //!
-//! The library is organized into several modules:
+//! [`JsonRpc`](jsonrpc::JsonRpc) registers JSON-RPC method handlers and processes
+//! messages. Use the builder pattern to add methods with automatic parameter
+//! deserialization.
 //!
-//! [`types`] contains JSON-RPC 2.0 message types including Request, Response,
-//! Notification, and Error. These structures handle serialization and
-//! deserialization of JSON-RPC messages.
-//!
-//! [`jsonrpc`] contains the `JsonRpc` type with a builder pattern API for
-//! registering JSON-RPC method handlers and processing messages.
+//! [`types`] defines JSON-RPC 2.0 message types (Request, Response, Notification,
+//! Error).
 //!
 //! [`error`] defines internal error types for implementation-level errors,
 //! separate from JSON-RPC protocol errors sent over the wire.
 //!
-//! [`axum`] (feature-gated) provides integration with the axum web framework,
-//! allowing you to serve JSON-RPC over HTTP with minimal boilerplate.
+//! [`axum`](axum) (feature-gated) provides integration with the axum web framework
+//! for serving JSON-RPC over HTTP.
 //!
 //! # Quick Start
 //!
-//! Create a handler and process messages:
+//! Create a handler and process a message:
 //!
 //! ```no_run
 //! use json_rpc::JsonRpc;
@@ -45,13 +42,20 @@
 //! let json_rpc = JsonRpc::new()
 //!     .add("echo", echo);
 //!
-//! let response = json_rpc.call(r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#).await;
+//! // Read from your transport
+//! let message = r#"{"jsonrpc":"2.0","method":"echo","params":"hello","id":1}"#;
+//!
+//! // Process the message
+//! if let Some(response) = json_rpc.call(message).await {
+//!     // Write to your transport
+//!     println!("{}", response);
+//! }
 //! # });
 //! ```
 //!
-//! # Stdio Integration
+//! # Stdio Example
 //!
-//! Use stdio for command-line tools and LSP implementations:
+//! Read newline-delimited JSON from stdin and write responses to stdout:
 //!
 //! ```no_run
 //! use json_rpc::JsonRpc;
@@ -83,7 +87,7 @@
 //!
 //! # Struct Parameters
 //!
-//! Handlers can use struct parameters for more complex APIs:
+//! Handlers can use struct parameters for complex APIs:
 //!
 //! ```no_run
 //! use json_rpc::JsonRpc;
@@ -125,21 +129,29 @@
 //!
 //! # Axum Integration
 //!
-//! The axum integration (enabled with the `axum` feature) provides a simple
-//! way to serve JSON-RPC over HTTP:
+//! The axum feature provides a handler for HTTP integration. Enable the feature
+//! in Cargo.toml:
+//!
+//! ```toml
+//! [dependencies]
+//! json-rpc-rs = { version = "0.2", features = ["axum"] }
+//! ```
 //!
 //! ```no_run
 //! # #[cfg(feature = "axum")]
 //! # {
-//! use json_rpc::{JsonRpc, axum::IntoAxumHandler};
+//! use json_rpc::{JsonRpc, axum::handler};
 //! use axum::Router;
+//! use std::sync::Arc;
 //!
 //! async fn echo(params: serde_json::Value) -> Result<serde_json::Value, json_rpc::Error> {
 //!     Ok(params)
 //! }
 //!
 //! let json_rpc = JsonRpc::new().add("echo", echo);
-//! let app = Router::new().route("/jsonrpc", json_rpc.into_axum_handler());
+//! let app = Router::new()
+//!     .route("/jsonrpc", handler)
+//!     .with_state(Arc::new(json_rpc));
 //! # }
 //! ```
 

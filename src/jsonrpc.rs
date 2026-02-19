@@ -1,8 +1,8 @@
-//! JSON-RPC handler with builder pattern.
+//! JSON-RPC handler for message processing.
 //!
-//! This module provides a `JsonRpc` type for registering JSON-RPC methods
-//! using a builder pattern. The handler can process JSON-RPC messages and
-//! return responses.
+//! This module provides the `JsonRpc` handler for registering methods and
+//! processing JSON-RPC messages. Call `JsonRpc::call()` with a JSON string to
+//! process a request and get a response string.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -23,10 +23,11 @@ type BoxedHandler = Box<
         + Sync,
 >;
 
-/// JSON-RPC handler with a builder pattern.
+/// JSON-RPC handler for message processing.
 ///
-/// `JsonRpc` allows you to register JSON-RPC method handlers using a fluent
-/// builder API. The handler can process JSON-RPC messages via the `call()` method.
+/// `JsonRpc` registers method handlers and processes JSON-RPC messages via the
+/// `call()` method. Use the builder pattern to add methods with automatic
+/// parameter deserialization.
 ///
 /// # Example
 ///
@@ -275,4 +276,3 @@ impl Default for JsonRpc {
         Self::new()
     }
 }
-
