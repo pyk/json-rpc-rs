@@ -58,7 +58,6 @@ use crate::JsonRpc;
 ///     .with_state(Arc::new(json_rpc));
 /// ```
 pub async fn handler(State(json_rpc): State<Arc<JsonRpc>>, request: Request) -> impl IntoResponse {
-    // Extract request body with a size limit of 10MB
     let bytes = match axum::body::to_bytes(request.into_body(), 10 * 1024 * 1024).await {
         Ok(b) => b,
         Err(e) => {
@@ -70,7 +69,6 @@ pub async fn handler(State(json_rpc): State<Arc<JsonRpc>>, request: Request) -> 
         }
     };
 
-    // Convert bytes to string
     let json_str = match String::from_utf8(bytes.to_vec()) {
         Ok(s) => s,
         Err(_) => {
@@ -84,14 +82,12 @@ pub async fn handler(State(json_rpc): State<Arc<JsonRpc>>, request: Request) -> 
 
     tracing::debug!("Processing JSON-RPC request: {}", json_str);
 
-    // Process the JSON-RPC message
     match json_rpc.call(&json_str).await {
         Some(response_json) => {
             tracing::debug!("Sending JSON-RPC response: {}", response_json);
             success_response(&response_json)
         }
         None => {
-            // Notification - no response needed
             tracing::debug!("Notification processed - no response needed");
             StatusCode::NO_CONTENT.into_response()
         }

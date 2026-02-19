@@ -90,7 +90,6 @@ pub fn get_example_path(name: &str) -> Result<PathBuf> {
     let profile = get_profile();
     let binary_path = target_dir.join(profile).join("examples").join(name);
 
-    // For axum examples, ensure they're built with the correct features
     if matches!(name, "basic_axum|echo_axum") {
         ensure_axum_examples_built()?;
     } else {

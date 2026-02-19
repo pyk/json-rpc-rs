@@ -27,13 +27,14 @@
 //!
 //! This example requires the "axum" feature to be enabled.
 
+use std::sync::Arc;
+
 use anyhow::Result;
 use axum::Router;
 use axum::routing::post;
 use json_rpc::axum::handler;
 use json_rpc::{Error, JsonRpc};
 use serde_json::Value;
-use std::sync::Arc;
 use tracing::info;
 
 /// Hello method that returns a greeting.

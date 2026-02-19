@@ -26,13 +26,15 @@
 //! {"jsonrpc":"2.0","result":{"message":"hello"},"id":1}
 //! ```
 
+use std::sync::Arc;
+
 use anyhow::Result;
+
 use axum::Router;
 use axum::routing::post;
 use json_rpc::JsonRpc;
 use json_rpc::axum::handler;
 use serde_json::Value;
-use std::sync::Arc;
 use tracing::info;
 
 async fn echo(params: Value) -> Result<Value, json_rpc::Error> {

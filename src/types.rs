@@ -161,109 +161,64 @@ pub enum Message {
 }
 
 impl Message {
-    /// Extract a RequestId from a JSON value, if present.
-    fn extract_request_id(value: &serde_json::Value) -> Option<RequestId> {
-        value.get("id").and_then(|id_value| match id_value {
-            serde_json::Value::Null => Some(RequestId::Null),
-            serde_json::Value::Number(n) => n.as_u64().map(RequestId::Number),
-            serde_json::Value::String(s) => {
-                let id_str = s.to_string();
-                Some(RequestId::String(id_str))
-            }
-            _ => None,
-        })
-    }
-
     pub fn from_json(value: serde_json::Value) -> Result<Self, InternalError> {
         debug!("Parsing JSON value: {:?}", value);
-        let value_ref = &value;
-
-        if let Some(arr) = value_ref.as_array() {
-            debug!("Detected batch request with {} items", arr.len());
-            if arr.is_empty() {
-                debug!("Empty array detected - returning Invalid Request error");
-                return Err(InternalError::invalid_request("Invalid Request"));
-            }
-
-            let mut messages = Vec::new();
-            for (index, item) in arr.iter().enumerate() {
-                debug!("Processing batch item {}: {:?}", index, item);
-                match Self::from_json_internal(item.clone()) {
-                    Ok(msg) => {
-                        debug!("Batch item {} parsed successfully", index);
-                        messages.push(msg);
-                    }
-                    Err(e) => {
-                        debug!("Batch item {} failed to parse: {:?}", index, e);
-                        let id = Self::extract_request_id(item);
-                        if let Some(id) = id {
-                            let error_response =
-                                Response::error(id, Error::invalid_request("Invalid Request"));
-                            messages.push(Message::Response(error_response));
-                        } else if item.get("method").is_some() {
-                            debug!(
-                                "Batch item {} is a notification (has method but no id), skipping",
-                                index
-                            );
-                        } else {
-                            debug!(
-                                "Batch item {} is invalid (no id or method), creating error response",
-                                index
-                            );
-                            let error_response = Response::error(
-                                RequestId::Null,
-                                Error::invalid_request("Invalid Request"),
-                            );
-                            messages.push(Message::Response(error_response));
-                        }
-                    }
-                }
-            }
-            debug!("Batch parsing complete, {} messages", messages.len());
-            return Ok(Message::Batch(messages));
+        if let Some(arr) = value.as_array() {
+            return Self::parse_batch(arr);
         }
 
-        if value_ref.get("id").is_some() {
-            debug!("Message has 'id' field, checking for error/method");
-            if value_ref.get("error").is_some() {
-                debug!("Message has 'error' field, parsing as Response");
-                serde_json::from_value(value)
-                    .map(Message::Response)
-                    .map_err(|e| {
-                        debug!("Failed to parse as Response: {}", e);
-                        InternalError::invalid_request("Invalid Request")
-                    })
-            } else if value_ref.get("method").is_some() {
-                debug!("Message has 'method' field, parsing as Request");
-                let req: Request = serde_json::from_value(value).map_err(|e| {
-                    debug!("Failed to deserialize as Request: {}", e);
-                    InternalError::invalid_request("Invalid Request")
-                })?;
+        Self::parse_single(value)
+    }
 
+    fn parse_batch(arr: &[serde_json::Value]) -> Result<Self, InternalError> {
+        if arr.is_empty() {
+            return Err(InternalError::invalid_request("Invalid Request"));
+        }
+
+        let messages: Result<Vec<Message>, InternalError> =
+            arr.iter().map(Self::parse_batch_item).collect();
+
+        Ok(Message::Batch(messages?))
+    }
+
+    fn parse_batch_item(item: &serde_json::Value) -> Result<Self, InternalError> {
+        match Self::parse_single(item.clone()) {
+            Ok(msg) => Ok(msg),
+            Err(_) => Ok(Message::Response(Response::error(
+                RequestId::Null,
+                Error::invalid_request("Invalid Request"),
+            ))),
+        }
+    }
+
+    fn parse_single(value: serde_json::Value) -> Result<Self, InternalError> {
+        let has_id = value.get("id").is_some();
+
+        if has_id {
+            if value.get("error").is_some() {
+                let resp: Response = serde_json::from_value(value)
+                    .map_err(|_| InternalError::invalid_request("Invalid Request"))?;
+                resp.validate()
+                    .map_err(|_| InternalError::invalid_request("Invalid Request"))?;
+                Ok(Message::Response(resp))
+            } else if value.get("method").is_some() {
+                let req: Request = serde_json::from_value(value)
+                    .map_err(|_| InternalError::invalid_request("Invalid Request"))?;
                 if req.jsonrpc != "2.0" {
-                    debug!("Invalid jsonrpc value: '{}', expected '2.0'", req.jsonrpc);
                     return Err(InternalError::invalid_request("Invalid Request"));
                 }
 
-                debug!("Request parsed successfully: {}", req.method);
                 Ok(Message::Request(req))
             } else {
-                debug!("Message has 'id' but no 'method' or 'error' - Invalid Request");
                 Err(InternalError::invalid_request("Invalid Request"))
             }
         } else {
-            debug!("Message has no 'id' field, parsing as Notification");
-            let notif: Notification = serde_json::from_value(value).map_err(|e| {
-                debug!("Failed to deserialize as Notification: {}", e);
-                InternalError::invalid_request("Invalid Request")
-            })?;
-
+            let notif: Notification = serde_json::from_value(value)
+                .map_err(|_| InternalError::invalid_request("Invalid Request"))?;
             if notif.jsonrpc != "2.0" {
-                debug!("Invalid jsonrpc value: '{}', expected '2.0'", notif.jsonrpc);
                 return Err(InternalError::invalid_request("Invalid Request"));
             }
 
-            debug!("Notification parsed successfully: {}", notif.method);
             Ok(Message::Notification(notif))
         }
     }
@@ -304,35 +259,5 @@ impl Message {
 
     pub fn is_batch(&self) -> bool {
         matches!(self, Message::Batch(_))
-    }
-
-    fn from_json_internal(value: serde_json::Value) -> Result<Self, InternalError> {
-        if value.get("id").is_some() {
-            if value.get("error").is_some() {
-                serde_json::from_value(value)
-                    .map(Message::Response)
-                    .map_err(|_| InternalError::invalid_request("Invalid Request"))
-            } else if value.get("method").is_some() {
-                serde_json::from_value::<Request>(value)
-                    .map(|req| {
-                        if req.jsonrpc != "2.0" {
-                            return Err(InternalError::invalid_request("Invalid Request"));
-                        }
-                        Ok(Message::Request(req))
-                    })
-                    .map_err(|_| InternalError::invalid_request("Invalid Request"))?
-            } else {
-                Err(InternalError::invalid_request("Invalid Request"))
-            }
-        } else {
-            serde_json::from_value::<Notification>(value)
-                .map(|notif| {
-                    if notif.jsonrpc != "2.0" {
-                        return Err(InternalError::invalid_request("Invalid Request"));
-                    }
-                    Ok(Message::Notification(notif))
-                })
-                .map_err(|_| InternalError::invalid_request("Invalid Request"))?
-        }
     }
 }
