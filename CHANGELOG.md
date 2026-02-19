@@ -6,6 +6,92 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-19
+
+### Breaking Changes
+
+#### Major Architecture Change: Bring Your Own Transport
+
+The library has been refactored from a full server implementation with built-in
+transports to a "Bring Your Own Transport" handler pattern. This simplifies the
+library and makes it more flexible and framework-agnostic.
+
+**API Changes:**
+
+- `Methods` renamed to `JsonRpc` and moved to `src/jsonrpc.rs`
+- `serve()` function removed - users now call `JsonRpc::call()` directly
+- All built-in transports removed from the library:
+    - `Stdio` transport removed
+    - `Http` transport removed
+    - `InMemory` transport removed
+    - `Transport` trait removed
+- `Error::TransportError` variant removed - transport I/O errors should be
+  handled by user's transport code
+- `Error::Cancelled` variant removed - cancellation handled by transport layer
+- `Error::transport()` constructor method removed
+- `Default` impl for `JsonRpc` removed - use `JsonRpc::new()` instead
+- axum integration is now optional (enable with `features = ["axum"]`)
+
+**Migration Guide:**
+
+Old server-based API:
+
+```rust
+use json_rpc::{Methods, Stdio};
+
+let methods = Methods::new().add("echo", echo);
+let transport = Stdio::new();
+json_rpc::serve(transport, methods).await?;
+```
+
+New handler-based API:
+
+```rust
+use json_rpc::JsonRpc;
+
+let json_rpc = JsonRpc::new().add("echo", echo);
+let stdin = tokio::io::stdin();
+let mut reader = tokio::io::BufReader::new(stdin);
+let mut line = String::new();
+
+while reader.read_line(&mut line).await? > 0 {
+    let trimmed = line.trim();
+    if !trimmed.is_empty() {
+        if let Some(response) = json_rpc.call(trimmed).await {
+            println!("{}", response);
+        }
+    }
+    line.clear();
+}
+```
+
+For HTTP integration with axum:
+
+```rust
+use axum::{Router, routing::post};
+use json_rpc::{JsonRpc, axum::handler};
+use std::sync::Arc;
+
+let json_rpc = JsonRpc::new().add("echo", echo);
+let app = Router::new()
+    .route("/jsonrpc", post(handler))
+    .with_state(Arc::new(json_rpc));
+let listener = tokio::net::TcpListener::bind(addr).await?;
+axum::serve(listener, app).await?;
+```
+
+### Changed
+
+- Simplify `from_json` parsing logic with modular helper functions
+- Add axum handler in `src/axum.rs` for HTTP integration
+- Make axum and http dependencies optional with new feature flags
+- Update Cargo.toml metadata and description
+- Update documentation throughout codebase to reflect handler pattern
+
+### Fixed
+
+- Fix version number in README.md
+
 ## [0.2.0] - 2026-02-18 - "Async JSON-RPC"
 
 ### Breaking Changes
@@ -82,10 +168,6 @@ To migrate from the old thread pool-based API:
 5. Replace `server.run()` with `json_rpc::serve(transport, methods).await`
 6. Remove any shutdown signal or cancellation token usage
 7. Update to use one of the three transports: `Stdio`, `Http`, or `InMemory`
-
-[0.2.0]: https://github.com/pyk/json-rpc-rs/releases/tag/v0.2.0
-
----
 
 ## [0.1.0] - 2026-02-17 - "Thread Pool Builder"
 
@@ -264,4 +346,6 @@ This library implements the JSON-RPC 2.0 specification including:
 - Batch requests (arrays of requests)
 - Standard error codes (-32700 to -32099)
 
+[0.3.0]: https://github.com/pyk/json-rpc-rs/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/pyk/json-rpc-rs/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/pyk/json-rpc-rs/releases/tag/v0.1.0
