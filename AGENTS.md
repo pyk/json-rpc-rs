@@ -45,6 +45,7 @@ rust-lint
 - [Research Instruction](.agents/instructions/research.md)
 - [Create Plan Instruction](.agents/instructions/create-plan.md)
 - [Create Git Commit Message Instruction](.agents/instructions/create-git-commit-message.md)
+- [Changelog Instruction](.agents/instructions/changelog.md)
 
 # Agent Modes
 
@@ -107,3 +108,20 @@ When creating or updating research documentation:
     - `**Answering**: ` references at the top of each question section
 5. Include section separators (`---`) between major sections.
 6. Review to ensure no extra content is included.
+
+## Changelog Mode
+
+When creating or updating the changelog:
+
+1. Read **Changelog Instruction** to understand the format and process.
+2. Check if `CHANGELOG.md` exists in the project root.
+3. Use git history to understand changes:
+    - If changelog exists: `git log v0.2.0...HEAD --oneline` (where v0.2.0 is
+      the previous version git tag)
+    - Otherwise: `git log --oneline`
+4. Review individual commits: `git show <commit-hash>`
+5. Create new changelog or add new version entry following Keep a Changelog
+   1.1.0.
+6. **IMPORTANT**: Do not edit previous changelog entries - preserve history.
+7. Categorize changes: Added, Changed, Deprecated, Removed, Fixed, Security.
+8. Verify all commits are accounted for in the changelog.
