@@ -96,11 +96,6 @@ impl JsonRpc {
         self
     }
 
-    /// Get the handler for a method name, if it exists.
-    pub(crate) fn get_handler(&self, method: &str) -> Option<&BoxedHandler> {
-        self.handlers.get(method)
-    }
-
     /// Process a JSON-RPC message and return the response JSON string (if any).
     ///
     /// This method processes a JSON-RPC message string and returns the response.
@@ -167,7 +162,7 @@ impl JsonRpc {
                 let method_name = &request.method;
                 let params = request.params.unwrap_or(serde_json::Value::Null);
                 let request_id = request.id.clone();
-                let response = if let Some(handler) = self.get_handler(method_name) {
+                let response = if let Some(handler) = self.handlers.get(method_name) {
                     let result = handler(params).await;
                     match result {
                         Ok(result_value) => Response::success(request_id, result_value),
@@ -197,7 +192,7 @@ impl JsonRpc {
                 }
             }
             Message::Notification(notification) => {
-                if let Some(handler) = self.get_handler(&notification.method) {
+                if let Some(handler) = self.handlers.get(&notification.method) {
                     let params = notification.params.unwrap_or(serde_json::Value::Null);
                     let _ = handler(params).await;
                 }
@@ -212,7 +207,7 @@ impl JsonRpc {
                             let method_name = &request.method;
                             let params = request.params.unwrap_or(serde_json::Value::Null);
                             let id = request.id;
-                            let response = if let Some(handler) = self.get_handler(method_name) {
+                            let response = if let Some(handler) = self.handlers.get(method_name) {
                                 let result = handler(params).await;
                                 match result {
                                     Ok(result_value) => Response::success(id, result_value),
@@ -240,7 +235,7 @@ impl JsonRpc {
                             responses.push(response);
                         }
                         Message::Notification(notification) => {
-                            if let Some(handler) = self.get_handler(&notification.method) {
+                            if let Some(handler) = self.handlers.get(&notification.method) {
                                 let params = notification.params.unwrap_or(serde_json::Value::Null);
                                 let _ = handler(params).await;
                             }
@@ -268,11 +263,5 @@ impl JsonRpc {
             }
             Message::Response(_response) => None,
         }
-    }
-}
-
-impl Default for JsonRpc {
-    fn default() -> Self {
-        Self::new()
     }
 }

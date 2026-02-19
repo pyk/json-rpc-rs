@@ -9,7 +9,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! json-rpc-rs = { version = "0.2", features = ["axum"] }
+//! json-rpc-rs = { version = "0.3", features = ["axum"] }
 //! ```
 //!
 //! # Example

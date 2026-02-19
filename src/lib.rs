@@ -11,21 +11,6 @@
 //! and write the response back. This gives you full control over your transport
 //! layer.
 //!
-//! # Modules
-//!
-//! [`JsonRpc`](jsonrpc::JsonRpc) registers JSON-RPC method handlers and processes
-//! messages. Use the builder pattern to add methods with automatic parameter
-//! deserialization.
-//!
-//! [`types`] defines JSON-RPC 2.0 message types (Request, Response, Notification,
-//! Error).
-//!
-//! [`error`] defines internal error types for implementation-level errors,
-//! separate from JSON-RPC protocol errors sent over the wire.
-//!
-//! [`axum`](axum) (feature-gated) provides integration with the axum web framework
-//! for serving JSON-RPC over HTTP.
-//!
 //! # Quick Start
 //!
 //! Create a handler and process a message:

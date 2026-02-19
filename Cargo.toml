@@ -1,8 +1,8 @@
 [package]
 name = "json-rpc-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
-description = "Framework-agnostic JSON-RPC 2.0 handler with Bring Your Own Transport"
+description = "A framework-agnostic JSON-RPC 2.0 handler for Rust"
 keywords = ["json-rpc", "rpc", "handler", "json", "async"]
 categories = ["network-programming", "asynchronous"]
 license = "MIT"
