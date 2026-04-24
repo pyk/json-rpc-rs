@@ -51,10 +51,10 @@ use crate::JsonRpc;
 /// use json_rpc::{JsonRpc, axum::handler};
 /// use axum::Router;
 /// use std::sync::Arc;
-//!
-//! let json_rpc = JsonRpc::new().add("echo", echo);
+///
+/// let json_rpc = JsonRpc::new().add("echo", echo);
 /// let app = Router::new()
-//!     .route("/jsonrpc", handler)
+///     .route("/jsonrpc", handler)
 ///     .with_state(Arc::new(json_rpc));
 /// ```
 pub async fn handler(State(json_rpc): State<Arc<JsonRpc>>, request: Request) -> impl IntoResponse {
