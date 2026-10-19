@@ -86,7 +86,8 @@ impl JsonRpc {
         let boxed: BoxedHandler = Box::new(move |params: serde_json::Value| {
             let handler = Arc::clone(&handler);
             Box::pin(async move {
-                let parsed: P = serde_json::from_value(params)?;
+                let parsed: P = serde_json::from_value(params)
+                    .map_err(|error| Error::rpc(-32602, error.to_string()))?;
                 let result = handler(parsed).await?;
                 Ok(serde_json::to_value(result)?)
             })
@@ -251,6 +252,10 @@ impl JsonRpc {
                             responses.push(error_response);
                         }
                     }
+                }
+
+                if responses.is_empty() {
+                    return None;
                 }
 
                 match serde_json::to_string(&responses) {

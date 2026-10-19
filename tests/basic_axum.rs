@@ -270,7 +270,7 @@ mod tests {
         });
 
         let response = send_request(request).await.trim_end().to_string();
-        let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: null, expected a string"},"id":1}"#;
+        let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32602,"message":"invalid type: null, expected a string"},"id":1}"#;
         assert_eq!(response, expected_response);
     }
 
@@ -284,7 +284,7 @@ mod tests {
         });
 
         let response = send_request(request).await.trim_end().to_string();
-        let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: integer `123`, expected a string"},"id":1}"#;
+        let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32602,"message":"invalid type: integer `123`, expected a string"},"id":1}"#;
         assert_eq!(response, expected_response);
     }
 
@@ -298,7 +298,7 @@ mod tests {
         });
 
         let response = send_request(request).await.trim_end().to_string();
-        let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: map, expected a string"},"id":1}"#;
+        let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32602,"message":"invalid type: map, expected a string"},"id":1}"#;
         assert_eq!(response, expected_response);
     }
 
@@ -312,7 +312,7 @@ mod tests {
         });
 
         let response = send_request(request).await.trim_end().to_string();
-        let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Protocol error: invalid type: sequence, expected a string"},"id":1}"#;
+        let expected_response = r#"{"jsonrpc":"2.0","error":{"code":-32602,"message":"invalid type: sequence, expected a string"},"id":1}"#;
         assert_eq!(response, expected_response);
     }
 
