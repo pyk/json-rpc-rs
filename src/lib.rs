@@ -126,7 +126,7 @@
 //! # #[cfg(feature = "axum")]
 //! # {
 //! use json_rpc::{JsonRpc, axum::handler};
-//! use axum::Router;
+//! use axum::{Router, routing::post};
 //! use std::sync::Arc;
 //!
 //! async fn echo(params: serde_json::Value) -> Result<serde_json::Value, json_rpc::Error> {
@@ -134,8 +134,8 @@
 //! }
 //!
 //! let json_rpc = JsonRpc::new().add("echo", echo);
-//! let app = Router::new()
-//!     .route("/jsonrpc", handler)
+//! let app: Router = Router::new()
+//!     .route("/jsonrpc", post(handler))
 //!     .with_state(Arc::new(json_rpc));
 //! # }
 //! ```

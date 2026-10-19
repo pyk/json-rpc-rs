@@ -16,7 +16,7 @@
 //!
 //! ```no_run
 //! use json_rpc::{JsonRpc, axum::handler};
-//! use axum::Router;
+//! use axum::{Router, routing::post};
 //! use std::sync::Arc;
 //!
 //! async fn echo(params: serde_json::Value) -> Result<serde_json::Value, json_rpc::Error> {
@@ -24,8 +24,8 @@
 //! }
 //!
 //! let json_rpc = JsonRpc::new().add("echo", echo);
-//! let app = Router::new()
-//!     .route("/jsonrpc", handler)
+//! let app: Router = Router::new()
+//!     .route("/jsonrpc", post(handler))
 //!     .with_state(Arc::new(json_rpc));
 //! ```
 
@@ -49,12 +49,15 @@ use crate::JsonRpc;
 ///
 /// ```no_run
 /// use json_rpc::{JsonRpc, axum::handler};
-/// use axum::Router;
+/// use axum::{Router, routing::post};
 /// use std::sync::Arc;
-//!
-//! let json_rpc = JsonRpc::new().add("echo", echo);
-/// let app = Router::new()
-//!     .route("/jsonrpc", handler)
+///
+/// async fn echo(params: serde_json::Value) -> Result<serde_json::Value, json_rpc::Error> {
+///     Ok(params)
+/// }
+/// let json_rpc = JsonRpc::new().add("echo", echo);
+/// let app: Router = Router::new()
+///     .route("/jsonrpc", post(handler))
 ///     .with_state(Arc::new(json_rpc));
 /// ```
 pub async fn handler(State(json_rpc): State<Arc<JsonRpc>>, request: Request) -> impl IntoResponse {
